@@ -1,0 +1,9 @@
+<svg width="240" height="240" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
+  <g transform="rotate(-20 120 120)">
+    <path d="M70 20 Q70 10 80 10 H160 Q170 10 170 20 V210 L120 180 L70 210 Z" fill="#00F5D4"/>
+    <polygon points="70,60 170,20 170,50 70,90" fill="#FEE440"/>
+    <polygon points="70,95 170,55 170,85 70,125" fill="#3A86FF"/>
+    <polygon points="70,130 170,90 170,120 70,160" fill="#FF006E"/>
+    <path d="M70 20 Q70 10 80 10 H160 Q170 10 170 20 V210 L120 180 L70 210 Z" fill="none" stroke="#0B132B" stroke-width="4"/>
+  </g>
+</svg>
