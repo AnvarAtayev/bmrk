@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bmrk"
-version = "0.1.0"
+version = "0.1.1"
 description = "Add navigable bookmarks to a PDF based on its heading structure."
 readme = "README.md"
 license = { text = "MIT" }
