@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/bmrk-logo.svg" width="180" />
+  <img src="https://raw.githubusercontent.com/AnvarAtayev/bmrk/main/assets/bmrk-logo.svg" width="180" />
 </p>
 
 <h1 align="center">bmrk</h1>
@@ -20,9 +20,6 @@
   </a>
   <a href="https://opensource.org/licenses/MIT">
     <img src="https://img.shields.io/badge/License-MIT-yellow.svg" />
-  </a>
-  <a href="https://github.com/AnvarAtayev/bmrk/releases">
-  <img src="https://img.shields.io/github/release-size/AnvarAtayev/bmrk" />
   </a>
 </p>
 
