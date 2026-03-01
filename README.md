@@ -13,10 +13,10 @@
     <img src="https://github.com/AnvarAtayev/bmrk/actions/workflows/ci.yml/badge.svg" />
   </a>
   <a href="https://pypi.org/project/bmrk/">
-    <img src="https://img.shields.io/pypi/v/bmrk" />
+    <img src="https://img.shields.io/pypi/v/bmrk?v=1" />
   </a>
   <a href="https://pypi.org/project/bmrk/">
-    <img src="https://img.shields.io/pypi/pyversions/bmrk" />
+    <img src="https://img.shields.io/pypi/pyversions/bmrk?v=1" />
   </a>
   <a href="https://opensource.org/licenses/MIT">
     <img src="https://img.shields.io/badge/License-MIT-yellow.svg" />
