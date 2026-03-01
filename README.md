@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/AnvarAtayev/bmrk/main/assets/bmrk-logo.svg" width="180" />
+  <img src="https://raw.githubusercontent.com/AnvarAtayev/bmrk/main/assets/bmrk-logo.png" width="180" />
 </p>
 
 <h1 align="center">bmrk</h1>
