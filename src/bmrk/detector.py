@@ -122,11 +122,9 @@ _MIN_HEADING_LEN = 2
 # treated as a Table of Contents page.
 _TOC_PAGE_THRESHOLD = 0.45
 
-# Fraction of page height that defines the header/footer margin zone.
-# Spans whose top position falls below this fraction of the page height are
-# treated as page headers; those above (1 - fraction) are treated as footers.
-# Both are excluded from heading detection to suppress running headers.
-_HEADER_MARGIN_RATIO = 0.08
+# Fraction of page height that defines the header/footer zone used for
+# running-header detection (not hard exclusion).
+_RUNNING_HEADER_ZONE_RATIO = 0.12
 
 # A heading title that appears on this many or more distinct pages is almost
 # certainly a running header rather than a real section heading.  All
@@ -250,6 +248,26 @@ def _in_margin(span: Span, ratio: float) -> bool:
         return False
     frac = span.get("top", 0) / page_h
     return frac < ratio or frac > (1.0 - ratio)
+
+
+def _span_top_frac(span: Span) -> float | None:
+    """
+    Return the normalized top position of *span* (0.0..1.0), or None.
+
+    Parameters
+    ----------
+    span : Span
+        Span as returned by ``_extract_spans``.
+
+    Returns
+    -------
+    float | None
+        Fractional vertical position, or None if unavailable.
+    """
+    page_h = span.get("page_height", 0)
+    if page_h <= 0:
+        return None
+    return span.get("top", 0) / page_h
 
 
 def _is_toc_page(page_spans: list[Span]) -> bool:
@@ -511,7 +529,7 @@ def detect_headings(
     on_page: Callable[[int, int], None] | None = None,
     skip_pages: int = 0,
     skip_toc: bool = True,
-    header_margin: float = _HEADER_MARGIN_RATIO,
+    header_margin: float = 0.0,
     merge_chapter_labels: bool = True,
     max_depth: int = 3,
 ) -> list[HeadingEntry]:
@@ -536,10 +554,10 @@ def detect_headings(
         When True (default), pages that appear to be a Table of Contents are
         automatically excluded from heading detection.
     header_margin : float
-        Fraction of the page height reserved for page headers (top) and
-        footers (bottom).  Spans in this margin zone are excluded from heading
-        detection to suppress running page headers.  Default is
-        ``_HEADER_MARGIN_RATIO`` (0.08).  Pass 0 to disable.
+        Optional exclusion margin (fraction of page height) for spans at the
+        very top/bottom of the page.  Default is 0 (no exclusion).  Running
+        headers are primarily suppressed by repetition-based detection, so
+        this is only an extra safety valve for noisy PDFs.
     merge_chapter_labels : bool
         When True (default), a structural label such as ``"Chapter 1"`` or
         ``"Part IV"`` that is immediately followed by a title on the same page
@@ -581,6 +599,32 @@ def detect_headings(
         if toc_pages:
             log.debug("TOC pages detected and skipped: %s", sorted(toc_pages))
             spans = [s for s in spans if s["page"] not in toc_pages]
+
+    # Precompute span positions for running-header suppression.
+    pos_ranges: dict[tuple[int, str], tuple[float, float]] = {}
+    for s in spans:
+        frac = _span_top_frac(s)
+        if frac is None:
+            continue
+        key = (s["page"], s["text"])
+        if key in pos_ranges:
+            minf, maxf = pos_ranges[key]
+            pos_ranges[key] = (min(minf, frac), max(maxf, frac))
+        else:
+            pos_ranges[key] = (frac, frac)
+
+    header_footer_keys: set[tuple[int, str]] = set()
+    for key, (minf, maxf) in pos_ranges.items():
+        if minf < _RUNNING_HEADER_ZONE_RATIO or maxf > (1.0 - _RUNNING_HEADER_ZONE_RATIO):
+            header_footer_keys.add(key)
+
+    title_pages_in_zone: dict[str, set[int]] = {}
+    for page, text in header_footer_keys:
+        title_pages_in_zone.setdefault(text, set()).add(page)
+
+    running_titles_by_zone = {
+        t for t, pages in title_pages_in_zone.items() if len(pages) >= _RUNNING_HEADER_MIN_PAGES
+    }
 
     body_size = _estimate_body_size(spans)
     threshold = body_size * size_threshold_ratio
@@ -719,23 +763,18 @@ def detect_headings(
     raw_entries.sort(key=lambda e: (e.page, span_order.get((e.page, e.title), 0)))
 
     # -----------------------------------------------------------------------
-    # Suppress running page headers (frequency-based)
+    # Suppress running page headers (repetition + position)
     # -----------------------------------------------------------------------
-    # A title on 3+ distinct pages is likely a running header; keep only the
-    # first occurrence.
-    title_page_set: dict[str, set[int]] = {}
-    for e in raw_entries:
-        title_page_set.setdefault(e.title, set()).add(e.page)
-    running_headers = {
-        t for t, pages in title_page_set.items() if len(pages) >= _RUNNING_HEADER_MIN_PAGES
-    }
-    if running_headers:
-        log.debug("Running page headers suppressed: %s", sorted(running_headers))
+    # A title that repeats on 3+ distinct pages *in the header/footer zone*
+    # is likely a running header; keep only the first occurrence (and only
+    # suppress later ones that also appear in that zone).
+    if running_titles_by_zone:
+        log.debug("Running page headers suppressed: %s", sorted(running_titles_by_zone))
         seen_running: set[str] = set()
         deduped: list[HeadingEntry] = []
         for e in raw_entries:
-            if e.title in running_headers:
-                if e.title in seen_running:
+            if e.title in running_titles_by_zone:
+                if e.title in seen_running and (e.page, e.title) in header_footer_keys:
                     continue
                 seen_running.add(e.title)
             deduped.append(e)

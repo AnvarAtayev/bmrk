@@ -32,4 +32,5 @@ htmlcov/
 
 # Project-specific
 .claude/
+.codex/
 CLAUDE.md
