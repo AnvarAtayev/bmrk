@@ -22,8 +22,10 @@ def mock_reader_writer(tmp_path):
     The caller can configure mock_reader.pages / metadata before use.
     """
     out_path = str(tmp_path / "out.pdf")
-    with patch("bmrk.bookmarker.PdfReader") as MockReader, \
-         patch("bmrk.bookmarker.PdfWriter") as MockWriter:
+    with (
+        patch("bmrk.bookmarker.PdfReader") as MockReader,
+        patch("bmrk.bookmarker.PdfWriter") as MockWriter,
+    ):
         reader = _make_reader()
         MockReader.return_value = reader
 
@@ -38,6 +40,7 @@ def mock_reader_writer(tmp_path):
 # Document cloning (clone_reader_document_root)
 # ---------------------------------------------------------------------------
 
+
 class TestDocumentCloning:
     def test_document_root_cloned(self, mock_reader_writer):
         reader, writer, out = mock_reader_writer
@@ -50,6 +53,7 @@ class TestDocumentCloning:
 # ---------------------------------------------------------------------------
 # Bookmark ordering and parent-child hierarchy
 # ---------------------------------------------------------------------------
+
 
 class TestBookmarkTree:
     def test_no_headings_writes_no_bookmarks(self, mock_reader_writer):
@@ -96,7 +100,7 @@ class TestBookmarkTree:
         write_bookmarks("in.pdf", out, headings)
 
         calls = writer.add_outline_item.call_args_list
-        assert calls[0].kwargs["parent"] is None       # H1 has no parent
+        assert calls[0].kwargs["parent"] is None  # H1 has no parent
         assert calls[1].kwargs["parent"] is h1_bookmark  # H2 is under H1
 
     def test_h3_nested_under_h2(self, mock_reader_writer):
@@ -133,13 +137,14 @@ class TestBookmarkTree:
         write_bookmarks("in.pdf", out, headings)
 
         calls = writer.add_outline_item.call_args_list
-        assert calls[2].kwargs["parent"] is None    # second H1: no parent
+        assert calls[2].kwargs["parent"] is None  # second H1: no parent
         assert calls[3].kwargs["parent"] is h1b_bm  # Sec 2.1 under Ch 2
 
 
 # ---------------------------------------------------------------------------
 # Page index clamping
 # ---------------------------------------------------------------------------
+
 
 class TestPageIndexClamping:
     def test_page_beyond_last_is_clamped(self, mock_reader_writer):
@@ -166,6 +171,7 @@ class TestPageIndexClamping:
 # ---------------------------------------------------------------------------
 # Output file
 # ---------------------------------------------------------------------------
+
 
 class TestOutputFile:
     def test_writer_is_written_to_output_path(self, mock_reader_writer, tmp_path):

@@ -73,13 +73,13 @@ class TestIsMathSpan:
         assert _is_math_span("\u2211") is True
 
     def test_integral_symbol(self):
-        assert _is_math_span("\u222B") is True
+        assert _is_math_span("\u222b") is True
 
     def test_product_symbol(self):
-        assert _is_math_span("\u220F") is True
+        assert _is_math_span("\u220f") is True
 
     def test_greek_letter(self):
-        assert _is_math_span("\u03B1") is True
+        assert _is_math_span("\u03b1") is True
 
     def test_arrow_symbol(self):
         assert _is_math_span("\u2192") is True
@@ -693,9 +693,7 @@ class TestDetectHeadings:
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         assert len(result) == 1
-        assert result[0].title == (
-            "Distributed Systems and Their Applications in Practice"
-        )
+        assert result[0].title == ("Distributed Systems and Their Applications in Practice")
         assert result[0].level == 3
 
     @patch("bmrk.detector.fitz")

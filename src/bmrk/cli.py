@@ -328,14 +328,11 @@ def main(
         # ------------------------------------------------------------------
         # Write bookmarked PDF
         # ------------------------------------------------------------------
-        status.update(
-            f"[bold]bmrk:[/bold] Writing bookmarked PDF ({len(headings)} headings)"
-        )
+        status.update(f"[bold]bmrk:[/bold] Writing bookmarked PDF ({len(headings)} headings)")
         write_bookmarks(effective_input, output_pdf, headings)
         status.stop()
         console.print(
-            f"[bold green]bmrk:[/bold green] {output_pdf} "
-            f"[dim]({len(headings)} headings)[/dim]"
+            f"[bold green]bmrk:[/bold green] {output_pdf} [dim]({len(headings)} headings)[/dim]"
         )
     finally:
         status.stop()

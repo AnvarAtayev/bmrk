@@ -148,17 +148,17 @@ _MAX_STYLED_HEADING_LEN = 120
 # non-whitespace characters are predominantly drawn from these ranges is
 # almost certainly a formula fragment, not a heading.
 _MATH_CHAR_RE = re.compile(
-    r"[\u0370-\u03FF"       # Greek and Coptic
-    r"\u2100-\u214F"        # Letterlike Symbols
-    r"\u2190-\u21FF"        # Arrows
-    r"\u2200-\u22FF"        # Mathematical Operators
-    r"\u2300-\u23FF"        # Miscellaneous Technical
-    r"\u27C0-\u27EF"        # Miscellaneous Mathematical Symbols-A
-    r"\u2980-\u29FF"        # Miscellaneous Mathematical Symbols-B
-    r"\u2A00-\u2AFF"        # Supplemental Mathematical Operators
+    r"[\u0370-\u03FF"  # Greek and Coptic
+    r"\u2100-\u214F"  # Letterlike Symbols
+    r"\u2190-\u21FF"  # Arrows
+    r"\u2200-\u22FF"  # Mathematical Operators
+    r"\u2300-\u23FF"  # Miscellaneous Technical
+    r"\u27C0-\u27EF"  # Miscellaneous Mathematical Symbols-A
+    r"\u2980-\u29FF"  # Miscellaneous Mathematical Symbols-B
+    r"\u2A00-\u2AFF"  # Supplemental Mathematical Operators
     r"\U0001D400-\U0001D7FF"  # Mathematical Alphanumeric Symbols
-    r"=+\-*/^~<>|"          # Common ASCII math operators
-    r"()\[\]{}]"            # Brackets and braces
+    r"=+\-*/^~<>|"  # Common ASCII math operators
+    r"()\[\]{}]"  # Brackets and braces
 )
 
 _MATH_SPAN_MAX_LEN = 20  # math fragments extracted as spans are short
