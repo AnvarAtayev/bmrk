@@ -36,6 +36,7 @@
   - [Basic](#basic)
   - [Options](#options)
   - [Inspect before writing](#inspect-before-writing)
+  - [Inspect block inference](#inspect-block-inference)
   - [Manual heading adjustments](#manual-heading-adjustments)
   - [Tune for a noisy PDF](#tune-for-a-noisy-pdf)
   - [Handle a cover page](#handle-a-cover-page)
@@ -148,6 +149,8 @@ bmrk paper.pdf paper_bookmarked.pdf
 | `--ocr` | off | Run OCR before detection. Requires `bmrk[ocr]`. |
 | `--export-headings FILE` | -- | Write detected heading structure to FILE (TSV). Edit and feed back in with `--import-headings`. |
 | `--import-headings FILE` | -- | Use headings from FILE instead of running detection. Enables manual adjustments. |
+| `--export-blocks FILE` | -- | Write the intermediate block-labeling stage to FILE as JSON Lines. |
+| `--blocks-only` | off | Stop after layout/block analysis. Do not detect headings or write a PDF. |
 | `--cover-pages N` | `0` | Skip the first N pages when detecting headings (e.g. cover page). |
 | `--max-depth N` / `-d` | `3` | Maximum heading depth to include (1 = chapters only, 2 = + sections, 3 = + subsections). |
 
@@ -156,6 +159,32 @@ bmrk paper.pdf paper_bookmarked.pdf
 ```bash
 bmrk paper.pdf --dry-run --verbose
 ```
+
+### Inspect block inference
+
+To inspect the middle stage directly:
+
+```bash
+bmrk paper.pdf --blocks-only
+```
+
+To export every inferred block as JSON Lines:
+
+```bash
+bmrk paper.pdf --export-blocks blocks.jsonl --blocks-only
+```
+
+Each JSON line includes:
+
+- page index and page number
+- bounding box
+- final `label`
+- confidence
+- dominant size and style flags
+- the extracted block text
+- block features used for later heading inference
+
+This is the best way to debug why a line was treated as a heading, body paragraph, caption, table region, math block, or prompt.
 
 ### Manual heading adjustments
 
@@ -223,32 +252,67 @@ bmrk report.pdf report_bookmarked.pdf --cover-pages 1
 
 ## How it works
 
-`bmrk` reads every text span in the PDF along with its font size and style, then uses three signals to find headings:
+`bmrk` does not detect headings from isolated lines anymore. It first builds a page layout, labels document blocks, and only then infers bookmark entries from blocks that survive the structural filters.
 
-1. **Font size** -- text larger than the body font is a heading. The biggest text becomes H1, the next size H2, and so on.
-2. **Numbered prefixes** -- lines like `1  Introduction` or `2.3  Methods` are headings, with depth inferred from the numbering.
-3. **Bold/italic at body size** -- some documents style section headings in bold or italic without changing the font size. These are picked up as the lowest heading level.
+### Detection pipeline
 
-After detection, `bmrk` cleans up the results (removes running page headers, deduplicates, merges chapter labels like `Chapter 1` with the title that follows) and writes the final bookmark outline into the output PDF.
+1. **Extract document structure**
+   - raw text lines, font sizes, positions, style flags, and detected table geometry
+
+2. **Build and label blocks**
+   - merge related lines into blocks
+   - label blocks as body paragraphs, table regions, display math, captions, problem prompts, TOC entries, running headers/footers, or heading candidates
+
+3. **Infer heading levels**
+   - numbered prefixes such as `2.1`
+   - font-size/style ranking
+   - chapter/part anchors
+   - local context
+
+5. **Post-process headings**
+   - remove duplicates
+   - merge labels like `Chapter 1` + `Title`
+   - enforce `--max-depth`
+
+6. **Write bookmarks**
+   - the final `HeadingEntry` list is written into the PDF outline
+
+The new middle stage is visible directly through `--blocks-only` and `--export-blocks`. That lets you inspect what `bmrk` thinks each page region is before heading-level inference happens.
+
+### Main functions
+
+The key functions are:
+
+- `src/bmrk/cli.py`
+  - `main(...)`: parses CLI options, runs detection/import, and writes bookmarks
+- `src/bmrk/layout.py`
+  - `analyze_layout(...)`: line extraction, block construction, and labeling
+  - `_read_pdf_artifacts(...)`: native line and table extraction
+  - `_label_blocks(...)`: assigns structural labels to blocks
+- `src/bmrk/detector.py`
+  - `detect_headings(...)`: converts labeled blocks into final `HeadingEntry` values
+  - `_build_heading_entries(...)`: assigns heading levels and merges chapter labels
+- `src/bmrk/bookmarker.py`
+  - `write_bookmarks(...)`: writes the final outline into the output PDF
 
 ```mermaid
 flowchart LR
-    A[PDF] --> B[Extract spans]
-    B --> C[Pre-process]
-    C --> D[Detect headings]
-    D --> E[Clean up]
-    E --> F[Write bookmarks]
+    A[PDF] --> C[Extract text lines]
+    C --> D[Build document blocks]
+    D --> E[Label blocks]
+    E --> F[Infer heading levels]
+    F --> G[Post-process headings]
+    G --> H[Write bookmarks]
 
-    C -.- C1["Skip cover/TOC pages
-    Exclude headers/footers
-    Estimate body font size"]
-    D -.- D1["1. Font size > body size
-    2. Numbered prefixes
-    3. Bold/italic at body size"]
-    E -.- E1["Remove running headers
-    Deduplicate adjacent titles
-    Merge chapter labels
-    Filter by max depth"]
+    E -.- E1["table / math / caption / prompt
+    body / TOC / running header
+    heading candidate"]
+    F -.- F1["numbering depth
+    font-size/style rank
+    chapter anchors"]
+    G -.- G1["deduplicate
+    merge Chapter + Title
+    apply max depth"]
 ```
 
 ## Code structure
@@ -256,7 +320,8 @@ flowchart LR
 ```
 src/bmrk/
 ├── cli.py        # Typer CLI entry point
-├── detector.py   # Heading detection logic and HeadingEntry dataclass
+├── layout.py     # Line extraction, block construction, and block labeling
+├── detector.py   # Heading inference and HeadingEntry dataclass
 ├── bookmarker.py # PDF bookmark writing
 ```
 

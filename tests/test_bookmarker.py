@@ -178,3 +178,16 @@ class TestOutputFile:
         _, writer, out = mock_reader_writer
         write_bookmarks("in.pdf", out, [])
         writer.write.assert_called_once()
+
+    def test_progress_callback_receives_major_steps(self, mock_reader_writer):
+        _, _, out = mock_reader_writer
+        headings = [HeadingEntry(level=1, title="Chapter 1", page=0)]
+        steps: list[str] = []
+
+        write_bookmarks("in.pdf", out, headings, on_step=steps.append)
+
+        assert steps[0] == "Opening input PDF"
+        assert "Cloning PDF structure" in steps
+        assert "Adding bookmarks (0/1)" in steps
+        assert "Adding bookmarks (1/1)" in steps
+        assert "Writing output PDF" in steps

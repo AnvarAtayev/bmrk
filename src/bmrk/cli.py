@@ -1,3 +1,4 @@
+import json
 import logging
 import tempfile
 from pathlib import Path
@@ -7,7 +8,13 @@ from rich.console import Console
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn
 
 from bmrk.bookmarker import write_bookmarks
-from bmrk.detector import HeadingEntry, NoReadableTextError, detect_headings
+from bmrk.detector import (
+    HeadingEntry,
+    NoReadableTextError,
+    build_headings_from_layout,
+    detect_headings,
+)
+from bmrk.layout import analyze_layout
 
 console = Console(highlight=False)
 
@@ -18,6 +25,11 @@ app = typer.Typer()
 # ---------------------------------------------------------------------------
 
 _HEADINGS_HEADER = "# bmrk heading export\n# level\tpage\ttitle\n"
+
+
+def _set_status(status, message: str) -> None:
+    """Update the Rich status spinner with a consistently formatted message."""
+    status.update(f"[bold]bmrk:[/bold] {message}")
 
 
 def _save_headings(headings: list[HeadingEntry], path: str) -> None:
@@ -90,6 +102,41 @@ def _load_headings(path: str, max_depth: int = 3) -> list[HeadingEntry]:
     return entries
 
 
+def _save_blocks(layout, path: str) -> None:
+    """Write labeled layout blocks to *path* as JSON Lines."""
+    with open(path, "w", encoding="utf-8") as fh:
+        for index, block in enumerate(layout.blocks):
+            x0, y0, x1, y1 = block.bbox
+            payload = {
+                "index": index,
+                "page_index": block.page,
+                "page_number": block.page + 1,
+                "bbox": [x0, y0, x1, y1],
+                "label": block.label.value,
+                "confidence": round(block.confidence, 3),
+                "layout_boxclass": block.features.get("layout_boxclass"),
+                "dominant_size": block.dominant_size,
+                "bold": block.bold,
+                "italic": block.italic,
+                "centered": block.centered,
+                "indent": block.indent,
+                "text": block.text,
+                "features": block.features,
+            }
+            fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def _print_blocks(layout) -> None:
+    """Print a compact block-label view to the console."""
+    console.print(f"  Block structure ([bold]{len(layout.blocks)}[/bold] blocks):")
+    for block in layout.blocks:
+        boxclass = block.features.get("layout_boxclass") or "-"
+        excerpt = block.text.replace("\n", " ")
+        console.print(
+            f"    p{block.page + 1:>4}  {block.label.value:<18} ({boxclass}) {excerpt[:100]}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
@@ -151,6 +198,20 @@ def main(
             "The file must be in the tab-separated format produced by --export-headings."
         ),
     ),
+    export_blocks: str | None = typer.Option(
+        None,
+        "--export-blocks",
+        metavar="FILE",
+        help=(
+            "Write the intermediate block labeling stage to FILE as JSON Lines. "
+            "Useful for debugging layout and heading inference."
+        ),
+    ),
+    blocks_only: bool = typer.Option(
+        False,
+        "--blocks-only",
+        help=("Stop after layout/block analysis. Do not detect headings or write an output PDF."),
+    ),
     cover_pages: int = typer.Option(
         0,
         "--cover-pages",
@@ -190,9 +251,16 @@ def main(
 
     # When no OUTPUT is given, treat it as export-only / dry-run.
     write_output = output_pdf is not None
-    if not write_output and not dry_run and export_headings is None:
+    if (
+        not write_output
+        and not dry_run
+        and export_headings is None
+        and export_blocks is None
+        and not blocks_only
+    ):
         typer.secho(
-            "Error: OUTPUT is required unless --dry-run or --export-headings is given.",
+            "Error: OUTPUT is required unless --dry-run, --export-headings, "
+            "--export-blocks, or --blocks-only is given.",
             fg=typer.colors.RED,
             err=True,
         )
@@ -229,7 +297,7 @@ def main(
                 )
                 raise typer.Exit(code=1)
 
-            status.update("[bold]bmrk:[/bold] Running OCR ...")
+            _set_status(status, "Running OCR")
             tmp_file = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
             tmp_ocr = tmp_file.name
             tmp_file.close()
@@ -245,8 +313,38 @@ def main(
         # ------------------------------------------------------------------
         # Heading detection (or import from file)
         # ------------------------------------------------------------------
+        layout = None
+        if export_blocks is not None or blocks_only:
+            _set_status(status, "Analysing layout")
+            layout = analyze_layout(
+                effective_input,
+                on_page=None,
+                size_threshold_ratio=threshold,
+                skip_pages=cover_pages,
+            )
+            if not layout.lines:
+                status.stop()
+                typer.secho(
+                    "  Warning: no selectable text found while building layout.",
+                    fg=typer.colors.YELLOW,
+                )
+                raise typer.Exit(code=1)
+            if export_blocks is not None:
+                _set_status(status, f"Exporting block analysis to {export_blocks}")
+                try:
+                    _save_blocks(layout, export_blocks)
+                except OSError as exc:
+                    status.stop()
+                    typer.secho(f"  Cannot write block export: {exc}", fg=typer.colors.RED)
+                    raise typer.Exit(code=1)
+
+        if blocks_only:
+            status.stop()
+            _print_blocks(layout)
+            raise typer.Exit()
+
         if import_headings is not None:
-            status.update(f"[bold]bmrk:[/bold] Loading headings from {import_headings}")
+            _set_status(status, f"Loading headings from {import_headings}")
             try:
                 headings = _load_headings(import_headings, max_depth=max_depth)
             except OSError as exc:
@@ -269,13 +367,23 @@ def main(
                     progress.update(task, completed=current + 1, total=total)
 
                 try:
-                    headings = detect_headings(
-                        effective_input,
-                        size_threshold_ratio=threshold,
-                        on_page=on_page,
-                        skip_pages=cover_pages,
-                        max_depth=max_depth,
-                    )
+                    if layout is not None:
+                        headings = build_headings_from_layout(
+                            layout,
+                            size_threshold_ratio=threshold,
+                            max_depth=max_depth,
+                        )
+                    else:
+                        detect_kwargs = {
+                            "size_threshold_ratio": threshold,
+                            "on_page": on_page,
+                            "skip_pages": cover_pages,
+                            "max_depth": max_depth,
+                        }
+                        headings = detect_headings(
+                            effective_input,
+                            **detect_kwargs,
+                        )
                 except NoReadableTextError as exc:
                     typer.secho(f"  Warning: {exc}", fg=typer.colors.YELLOW)
                     typer.secho(
@@ -284,11 +392,13 @@ def main(
                     )
                     raise typer.Exit(code=1)
             status.start()
+            _set_status(status, f"Finalising heading set ({len(headings)} headings)")
 
         # ------------------------------------------------------------------
         # Export headings to file if requested
         # ------------------------------------------------------------------
         if export_headings is not None:
+            _set_status(status, f"Exporting headings to {export_headings}")
             try:
                 _save_headings(headings, export_headings)
             except OSError as exc:
@@ -309,7 +419,13 @@ def main(
             if not write_output or dry_run:
                 raise typer.Exit()
             # Still write the output (a clean copy) so the command is idempotent
-            write_bookmarks(effective_input, output_pdf, headings)
+            _set_status(status, "Writing output PDF (no headings)")
+            write_bookmarks(
+                effective_input,
+                output_pdf,
+                headings,
+                on_step=lambda message: _set_status(status, message),
+            )
             raise typer.Exit()
 
         if dry_run or verbose or not write_output:
@@ -328,8 +444,13 @@ def main(
         # ------------------------------------------------------------------
         # Write bookmarked PDF
         # ------------------------------------------------------------------
-        status.update(f"[bold]bmrk:[/bold] Writing bookmarked PDF ({len(headings)} headings)")
-        write_bookmarks(effective_input, output_pdf, headings)
+        _set_status(status, f"Preparing bookmarked PDF ({len(headings)} headings)")
+        write_bookmarks(
+            effective_input,
+            output_pdf,
+            headings,
+            on_step=lambda message: _set_status(status, message),
+        )
         status.stop()
         console.print(
             f"[bold green]bmrk:[/bold green] {output_pdf} [dim]({len(headings)} headings)[/dim]"

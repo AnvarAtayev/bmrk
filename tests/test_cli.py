@@ -5,6 +5,7 @@ from typer.testing import CliRunner
 
 from bmrk.cli import _load_headings, _save_headings, app
 from bmrk.detector import HeadingEntry, NoReadableTextError
+from bmrk.layout import BlockLabel, DocumentBlock, DocumentLayout, RawLine
 
 
 @pytest.fixture()
@@ -43,6 +44,46 @@ def _invoke(runner, args, headings=None, *, write_side_effect=None, detect_side_
     return result, mock_detect, mock_write
 
 
+def _make_layout() -> DocumentLayout:
+    raw_line = RawLine(
+        page=0,
+        text="Generic Title",
+        bbox=(48.0, 100.0, 180.0, 118.0),
+        top=100.0,
+        bottom=118.0,
+        left=48.0,
+        right=180.0,
+        page_width=612.0,
+        page_height=792.0,
+        size=18.0,
+        bold=True,
+        italic=False,
+        block_id=0,
+        line_id=0,
+        segment_texts=["Generic Title"],
+    )
+    block = DocumentBlock(
+        page=0,
+        bbox=raw_line.bbox,
+        text="Generic Title",
+        lines=[raw_line],
+        dominant_size=18.0,
+        bold=True,
+        italic=False,
+        centered=False,
+        indent=48.0,
+        label=BlockLabel.HEADING_CANDIDATE,
+        confidence=0.96,
+        features={"layout_boxclass": "title", "numeric_depth": None},
+    )
+    return DocumentLayout(
+        lines=[raw_line],
+        blocks=[block],
+        body_cluster={"size": 12.0, "bold": False, "italic": False},
+        toc_pages=set(),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Normal flow
 # ---------------------------------------------------------------------------
@@ -62,7 +103,7 @@ class TestNormalFlow:
     def test_write_bookmarks_called_with_correct_args(self, runner):
         headings = [HeadingEntry(level=1, title="Introduction", page=0)]
         _, _, mock_write = _invoke(runner, ["input.pdf", "output.pdf"], headings)
-        mock_write.assert_called_once_with(ANY, ANY, headings)
+        mock_write.assert_called_once_with(ANY, ANY, headings, on_step=ANY)
 
     def test_detected_heading_count_printed(self, runner):
         headings = [
@@ -222,6 +263,92 @@ class TestCoverPages:
             skip_pages=2,
             max_depth=3,
         )
+
+
+# ---------------------------------------------------------------------------
+# --export-blocks / --blocks-only
+# ---------------------------------------------------------------------------
+
+
+class TestBlocks:
+    def test_export_blocks_creates_jsonl_without_output(self, runner):
+        layout = _make_layout()
+        with runner.isolated_filesystem():
+            with open("input.pdf", "wb") as f:
+                f.write(b"%PDF-1.4 stub")
+            with (
+                patch("bmrk.cli.analyze_layout", return_value=layout) as mock_layout,
+                patch("bmrk.cli.build_headings_from_layout") as mock_build,
+                patch("bmrk.cli.detect_headings") as mock_detect,
+                patch("bmrk.cli.write_bookmarks") as mock_write,
+            ):
+                result = runner.invoke(
+                    app,
+                    ["input.pdf", "--export-blocks", "blocks.jsonl", "--blocks-only"],
+                    catch_exceptions=False,
+                )
+
+            with open("blocks.jsonl", encoding="utf-8") as fh:
+                content = fh.read()
+
+        assert result.exit_code == 0
+        assert '"label": "heading_candidate"' in content
+        assert '"layout_boxclass": "title"' in content
+        mock_layout.assert_called_once()
+        mock_build.assert_not_called()
+        mock_detect.assert_not_called()
+        mock_write.assert_not_called()
+
+    def test_blocks_only_prints_block_structure(self, runner):
+        layout = _make_layout()
+        with runner.isolated_filesystem():
+            with open("input.pdf", "wb") as f:
+                f.write(b"%PDF-1.4 stub")
+            with (
+                patch("bmrk.cli.analyze_layout", return_value=layout),
+                patch("bmrk.cli.build_headings_from_layout") as mock_build,
+                patch("bmrk.cli.write_bookmarks") as mock_write,
+            ):
+                result = runner.invoke(
+                    app,
+                    ["input.pdf", "--blocks-only"],
+                    catch_exceptions=False,
+                )
+
+        assert result.exit_code == 0
+        assert "Block structure" in result.output
+        assert "heading_candidate" in result.output
+        assert "Generic Title" in result.output
+        mock_build.assert_not_called()
+        mock_write.assert_not_called()
+
+    def test_export_blocks_reuses_layout_for_heading_build(self, runner):
+        layout = _make_layout()
+        headings = [HeadingEntry(level=1, title="Generic Title", page=0)]
+        with runner.isolated_filesystem():
+            with open("input.pdf", "wb") as f:
+                f.write(b"%PDF-1.4 stub")
+            with (
+                patch("bmrk.cli.analyze_layout", return_value=layout) as mock_layout,
+                patch("bmrk.cli.build_headings_from_layout", return_value=headings) as mock_build,
+                patch("bmrk.cli.detect_headings") as mock_detect,
+                patch("bmrk.cli.write_bookmarks") as mock_write,
+            ):
+                result = runner.invoke(
+                    app,
+                    ["input.pdf", "output.pdf", "--export-blocks", "blocks.jsonl"],
+                    catch_exceptions=False,
+                )
+
+        assert result.exit_code == 0
+        mock_layout.assert_called_once()
+        mock_build.assert_called_once_with(
+            layout,
+            size_threshold_ratio=1.05,
+            max_depth=3,
+        )
+        mock_detect.assert_not_called()
+        mock_write.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

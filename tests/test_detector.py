@@ -5,11 +5,19 @@ import pytest
 from bmrk.detector import (
     NoReadableTextError,
     _assign_heading_levels,
-    _estimate_body_size,
+    _extract_numbered_depth,
+    _infer_numeric_level_offset,
+    _is_body_starter_with_continuation,
+    _is_colon_math_introducer,
+    _is_likely_diagram_label,
+    _is_likely_equation_line,
+    _is_likely_plain_heading_text,
     _is_math_span,
     _is_noise,
+    _is_numeric_continuation_line,
+    _is_numeric_table_row,
+    _is_toc_continuation_page,
     _is_toc_page,
-    _merge_wrapped_headings,
     _numeric_depth,
     detect_headings,
 )
@@ -139,43 +147,217 @@ class TestNumericDepth:
 
 
 # ---------------------------------------------------------------------------
-# _estimate_body_size
+# _extract_numbered_depth
 # ---------------------------------------------------------------------------
 
 
-class TestEstimateBodySize:
-    def test_empty_spans_returns_default(self):
-        assert _estimate_body_size([]) == 11.0
+class TestExtractNumberedDepth:
+    def test_two_space_numeric_heading(self):
+        assert _extract_numbered_depth("2.3  Methods") == 2
 
-    def test_single_span(self):
-        spans = [{"text": "Hello world", "size": 12.0}]
-        assert _estimate_body_size(spans) == 12.0
+    def test_single_space_dotted_numeric_heading(self):
+        assert _extract_numbered_depth("2.1 Section Title") == 2
 
-    def test_most_common_size_wins(self):
-        spans = [
-            {"text": "abc", "size": 12.0},
-            {"text": "def", "size": 12.0},
-            {"text": "ghi", "size": 12.0},
-            {"text": "jkl", "size": 18.0},
-        ]
-        assert _estimate_body_size(spans) == 12.0
+    def test_single_space_plain_numeric_rejected(self):
+        assert _extract_numbered_depth("1 Introduction") is None
 
-    def test_weighted_by_char_count(self):
-        # One long span at 12pt beats many short spans at 10pt
-        spans = [
-            {"text": "x" * 100, "size": 12.0},
-            {"text": "a", "size": 10.0},
-            {"text": "b", "size": 10.0},
-        ]
-        assert _estimate_body_size(spans) == 12.0
+    def test_single_space_appendix_prefix_rejected(self):
+        assert _extract_numbered_depth("A Appendix") is None
 
-    def test_rounds_to_half_point_buckets(self):
-        # 12.3 and 12.4 both round to the 12.5 bucket
-        spans = [
-            {"text": "abc", "size": 12.3},
-            {"text": "def", "size": 12.4},
-        ]
-        assert _estimate_body_size(spans) == 12.5
+    def test_numeric_title_after_prefix_rejected(self):
+        assert _extract_numbered_depth("0.8 7= 3 months") is None
+
+    def test_equation_like_title_after_prefix_rejected(self):
+        assert _extract_numbered_depth("2.1 x= y+1") is None
+
+
+# ---------------------------------------------------------------------------
+# _infer_numeric_level_offset
+# ---------------------------------------------------------------------------
+
+
+class TestInferNumericLevelOffset:
+    def test_anchor_keeps_absolute_depth(self):
+        assert _infer_numeric_level_offset([2, 2, 3], has_anchor=True) == 0
+
+    def test_no_anchor_normalizes_min_depth_to_level_one(self):
+        assert _infer_numeric_level_offset([2, 2, 3], has_anchor=False) == 1
+
+    def test_depth_one_no_shift(self):
+        assert _infer_numeric_level_offset([1, 2], has_anchor=False) == 0
+
+
+# ---------------------------------------------------------------------------
+# _is_numeric_table_row
+# ---------------------------------------------------------------------------
+
+
+class TestIsNumericTableRow:
+    def test_decimal_table_values_detected(self):
+        assert _is_numeric_table_row("1.623 5.018 8.000 10.613 12.199") is True
+
+    def test_numeric_line_with_symbols_detected(self):
+        assert _is_numeric_table_row("209.13 59.42 32.66 %") is True
+
+    def test_numbered_heading_not_table_row(self):
+        assert _is_numeric_table_row("2.1 Section Title") is False
+
+
+# ---------------------------------------------------------------------------
+# _is_likely_diagram_label
+# ---------------------------------------------------------------------------
+
+
+class TestIsLikelyDiagramLabel:
+    def test_symbol_heavy_oversized_text_detected(self):
+        assert _is_likely_diagram_label("6H )-O", size=28.0, body_size=9.5) is True
+
+    def test_short_oversized_token_detected(self):
+        assert _is_likely_diagram_label("/ \\ IN", size=40.0, body_size=9.5) is True
+
+    def test_normal_heading_not_detected(self):
+        assert _is_likely_diagram_label("River crossing", size=11.5, body_size=9.5) is False
+
+
+# ---------------------------------------------------------------------------
+# _is_likely_equation_line
+# ---------------------------------------------------------------------------
+
+
+class TestIsLikelyEquationLine:
+    def test_operator_dense_line_detected(self):
+        assert _is_likely_equation_line("N=2>5=8a+4b+2c+d") is True
+
+    def test_trailing_equals_detected(self):
+        assert _is_likely_equation_line("Solution setup, y_n =") is True
+
+    def test_short_trig_formula_detected(self):
+        assert _is_likely_equation_line("sin x cos x tan x = sec x") is True
+
+    def test_question_with_math_tail_detected(self):
+        assert _is_likely_equation_line("What is the derivative of y = ln x^x?") is True
+
+    def test_short_ocr_math_fragment_detected(self):
+        assert _is_likely_equation_line("Ine 5 Inz") is True
+
+    def test_heading_prefix_with_formula_suffix_detected(self):
+        assert _is_likely_equation_line("Example technique: [u dv = uv - [v du") is True
+
+    def test_regular_heading_not_detected(self):
+        assert _is_likely_equation_line("Expected Value and Variance") is False
+
+
+# ---------------------------------------------------------------------------
+# _is_likely_plain_heading_text
+# ---------------------------------------------------------------------------
+
+
+class TestIsLikelyPlainHeadingText:
+    def test_normal_heading_detected(self):
+        assert _is_likely_plain_heading_text("Sample Section Title") is True
+
+    def test_short_formula_token_rejected(self):
+        assert _is_likely_plain_heading_text("X2") is False
+
+    def test_equation_like_token_soup_rejected(self):
+        assert _is_likely_plain_heading_text("(n+1)! 3! 5!") is False
+
+    def test_inline_question_marker_rejected(self):
+        assert _is_likely_plain_heading_text("A. What is i?") is False
+
+
+# ---------------------------------------------------------------------------
+# _is_body_starter_with_continuation
+# ---------------------------------------------------------------------------
+
+
+class TestIsBodyStarterWithContinuation:
+    def test_starter_followed_by_short_math_and_lowercase_line_detected(self):
+        cur = {"text": "Let A be a sample value and x |", "size": 14.0, "top": 100.0, "page": 0}
+        nxt = {"text": "x", "size": 11.0, "top": 106.0, "page": 0}
+        nxt2 = {
+            "text": "be its corresponding entry under this setup.",
+            "size": 9.5,
+            "top": 116.0,
+            "page": 0,
+        }
+
+        assert _is_body_starter_with_continuation(cur, nxt, nxt2) is True
+
+    def test_normal_heading_not_detected(self):
+        cur = {"text": "Sample Subsection", "size": 14.0, "top": 100.0, "page": 0}
+        nxt = {"text": "Additional Notes", "size": 11.0, "top": 130.0, "page": 0}
+        nxt2 = {"text": "More text", "size": 9.5, "top": 145.0, "page": 0}
+
+        assert _is_body_starter_with_continuation(cur, nxt, nxt2) is False
+
+
+# ---------------------------------------------------------------------------
+# _is_numeric_continuation_line
+# ---------------------------------------------------------------------------
+
+
+class TestIsNumericContinuationLine:
+    def test_wrapped_question_tail_detected(self):
+        prev = {
+            "text": "The previous sentence continues onto the next visual line with more detail",
+            "size": 9.5,
+            "top": 100.0,
+            "page": 0,
+            "bold": False,
+            "italic": False,
+        }
+        cur = {
+            "text": "50 items?",
+            "size": 10.2,
+            "top": 111.0,
+            "page": 0,
+            "bold": False,
+            "italic": False,
+        }
+
+        assert _is_numeric_continuation_line(cur, prev) is True
+
+    def test_numbered_heading_not_detected(self):
+        prev = {
+            "text": "Closing sentence.",
+            "size": 9.5,
+            "top": 100.0,
+            "page": 0,
+            "bold": False,
+            "italic": False,
+        }
+        cur = {
+            "text": "12. Example Topic",
+            "size": 11.0,
+            "top": 140.0,
+            "page": 0,
+            "bold": False,
+            "italic": False,
+        }
+
+        assert _is_numeric_continuation_line(cur, prev) is False
+
+
+# ---------------------------------------------------------------------------
+# _is_colon_math_introducer
+# ---------------------------------------------------------------------------
+
+
+class TestIsColonMathIntroducer:
+    def test_label_followed_by_math_fragments_detected(self):
+        cur = {"text": "Example rule:", "size": 10.1, "top": 100.0, "page": 0}
+        nxt = {"text": "x", "size": 12.0, "top": 120.0, "page": 0}
+        nxt2 = {"text": "1/2", "size": 12.0, "top": 136.0, "page": 0}
+
+        assert _is_colon_math_introducer(cur, nxt, nxt2) is True
+
+    def test_normal_heading_with_prose_not_detected(self):
+        cur = {"text": "Sample Heading:", "size": 10.1, "top": 100.0, "page": 0}
+        nxt = {"text": "Additional prose follows here", "size": 9.5, "top": 120.0, "page": 0}
+        nxt2 = {"text": "and continues normally.", "size": 9.5, "top": 134.0, "page": 0}
+
+        assert _is_colon_math_introducer(cur, nxt, nxt2) is False
 
 
 # ---------------------------------------------------------------------------
@@ -217,78 +399,6 @@ class TestAssignHeadingLevels:
 
 
 # ---------------------------------------------------------------------------
-# _merge_wrapped_headings
-# ---------------------------------------------------------------------------
-
-
-class TestMergeWrappedHeadings:
-    def _span(self, text: str, size: float, top: float, page: int = 0) -> dict:
-        return {"text": text, "size": size, "top": top, "page": page}
-
-    def test_empty_returns_empty(self):
-        assert _merge_wrapped_headings([]) == []
-
-    def test_single_span_unchanged(self):
-        spans = [self._span("Introduction", 18.0, 100.0)]
-        result = _merge_wrapped_headings(spans)
-        assert len(result) == 1
-        assert result[0]["text"] == "Introduction"
-
-    def test_two_same_size_adjacent_lines_merged(self):
-        spans = [
-            self._span("COMPUTATIONAL", 24.0, 100.0),
-            self._span("METHODS", 24.0, 130.0),  # gap = 30 < 24 * 1.8 = 43.2
-        ]
-        result = _merge_wrapped_headings(spans)
-        assert len(result) == 1
-        assert result[0]["text"] == "COMPUTATIONAL METHODS"
-
-    def test_merged_span_stores_component_texts(self):
-        spans = [
-            self._span("COMPUTATIONAL", 24.0, 100.0),
-            self._span("METHODS", 24.0, 130.0),
-        ]
-        result = _merge_wrapped_headings(spans)
-        assert result[0]["_merged_texts"] == ["COMPUTATIONAL", "METHODS"]
-
-    def test_different_sizes_not_merged(self):
-        spans = [
-            self._span("Chapter 1", 16.0, 100.0),
-            self._span("Introduction", 24.0, 140.0),
-        ]
-        result = _merge_wrapped_headings(spans)
-        assert len(result) == 2
-        assert result[0]["text"] == "Chapter 1"
-        assert result[1]["text"] == "Introduction"
-
-    def test_large_gap_not_merged(self):
-        # Gap of 200 >> 18 * 1.8 = 32.4 -- these are separate headings
-        spans = [
-            self._span("Introduction", 18.0, 100.0),
-            self._span("Methods", 18.0, 300.0),
-        ]
-        result = _merge_wrapped_headings(spans)
-        assert len(result) == 2
-
-    def test_different_pages_not_merged(self):
-        spans = [
-            self._span("The End", 18.0, 100.0, page=0),
-            self._span("Of Time", 18.0, 105.0, page=1),
-        ]
-        result = _merge_wrapped_headings(spans)
-        assert len(result) == 2
-
-    def test_sentence_ending_punctuation_stops_merge(self):
-        # First line ends with "." — treat as separate heading, not a continuation
-        spans = [
-            self._span("Summary.", 18.0, 100.0),
-            self._span("Overview", 18.0, 120.0),
-        ]
-        result = _merge_wrapped_headings(spans)
-        assert len(result) == 2
-
-
-# ---------------------------------------------------------------------------
 # _is_toc_page
 # ---------------------------------------------------------------------------
 
@@ -320,6 +430,46 @@ class TestIsTocPage:
         spans = [self._span("Intro ........ 1"), self._span("Methods ...... 5")]
         assert _is_toc_page(spans) is False
 
+    def test_toc_heading_detected_even_with_few_lines(self):
+        spans = [
+            self._span("Table of Contents"),
+            self._span("Chapter 2 Topic ... 3"),
+        ]
+        assert _is_toc_page(spans) is True
+
+    def test_ocr_toc_entry_pattern_detected(self):
+        spans = [
+            self._span("2.1 Section Title ..................cccccc 3"),
+            self._span("2.2 Section Two ............................ 5"),
+            self._span("2.3 Section Three .......................... 10"),
+            self._span("2.4 Section Four ........................... 15"),
+        ]
+        assert _is_toc_page(spans) is True
+
+    def test_spaced_contents_heading_detected(self):
+        spans = [
+            self._span("C O N T E N T S"),
+            self._span("Chapter 5"),
+            self._span("Example Topic"),
+            self._span("73"),
+        ]
+        assert _is_toc_page(spans) is True
+
+    def test_toc_continuation_page_detected(self):
+        spans = [
+            self._span("Chapter 5"),
+            self._span("Example Topic"),
+            self._span("73"),
+            self._span("Subtopic A"),
+            self._span("81"),
+            self._span("Subtopic B"),
+            self._span("90"),
+            self._span("Chapter 6"),
+            self._span("Another Topic"),
+            self._span("105"),
+        ]
+        assert _is_toc_continuation_page(spans) is True
+
 
 # ---------------------------------------------------------------------------
 # detect_headings (fitz/PyMuPDF mocked)
@@ -334,6 +484,7 @@ def _make_span(
     size: float,
     flags: int = _FLAGS_REGULAR,
     top: float = 100.0,
+    left: float = 0.0,
 ) -> dict:
     """
     Build a PyMuPDF-style span dict for a single text line.
@@ -345,8 +496,17 @@ def _make_span(
         "text": text,
         "size": size,
         "flags": flags,
-        "bbox": (0.0, top, len(text) * size * 0.6, top + size),
+        "bbox": (left, top, left + len(text) * size * 0.6, top + size),
     }
+
+
+def _make_line(*spans: dict) -> dict:
+    """Build a PyMuPDF-style line dict from one or more spans."""
+    x0 = min(s["bbox"][0] for s in spans)
+    y0 = min(s["bbox"][1] for s in spans)
+    x1 = max(s["bbox"][2] for s in spans)
+    y1 = max(s["bbox"][3] for s in spans)
+    return {"bbox": (x0, y0, x1, y1), "spans": list(spans)}
 
 
 def _make_mock_doc(spans: list[list[dict]], page_height: float = 792.0):
@@ -361,13 +521,22 @@ def _make_mock_doc(spans: list[list[dict]], page_height: float = 792.0):
     mock_pages = []
     for span_list in spans:
         page = MagicMock()
-        lines = [
-            {
-                "bbox": (0.0, s["bbox"][1], 500.0, s["bbox"][1] + s["size"]),
-                "spans": [s],
-            }
-            for s in span_list
-        ]
+        lines = []
+        for item in span_list:
+            if "spans" in item:
+                lines.append({"bbox": item["bbox"], "spans": item["spans"]})
+            else:
+                lines.append(
+                    {
+                        "bbox": (
+                            item["bbox"][0],
+                            item["bbox"][1],
+                            500.0,
+                            item["bbox"][1] + item["size"],
+                        ),
+                        "spans": [item],
+                    }
+                )
         block = {"type": 0, "bbox": (0.0, 0.0, 500.0, page_height), "lines": lines}
         page.get_text.return_value = {"blocks": [block] if lines else []}
         page.rect = MagicMock()
@@ -418,6 +587,17 @@ class TestDetectHeadings:
         assert result[0].level == 1
 
     @patch("bmrk.detector.fitz")
+    def test_numeric_table_row_not_detected_as_heading(self, mock_fitz):
+        body = _make_span("body text here and more", 12.0, top=100)
+        table_vals = _make_span("1.623 5.018 8.000 10.613 12.199", 12.0, top=200)
+        mock_doc = _make_mock_doc([[body, table_vals]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        assert result == []
+
+    @patch("bmrk.detector.fitz")
     def test_subsection_numeric_prefix_depth(self, mock_fitz):
         body = _make_span("body text here and more", 12.0, top=100)
         subsection = _make_span("2.3  Methods", 12.0, top=200)
@@ -427,7 +607,9 @@ class TestDetectHeadings:
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         assert len(result) == 1
-        assert result[0].level == 2  # dot-count = 1 -> depth 2
+        # Without chapter anchors, depth inference normalizes minimum numeric
+        # depth to level 1 for this document.
+        assert result[0].level == 1
 
     @patch("bmrk.detector.fitz")
     def test_noise_line_not_a_heading(self, mock_fitz):
@@ -533,6 +715,68 @@ class TestDetectHeadings:
         assert result[0].level == 1
 
     @patch("bmrk.detector.fitz")
+    def test_numeric_signal_deepens_level_when_chapter_anchor_present(self, mock_fitz):
+        # Chapter and subsection share the same size; numeric depth should still
+        # infer subsection nesting when a chapter anchor exists.
+        body = _make_span("x" * 200, 12.0, top=300)
+        chapter = _make_span("Chapter 2 Topic", 20.0, top=100)
+        subsection = _make_span("2.1 Section Title", 20.0, top=200)
+        mock_doc = _make_mock_doc([[chapter, subsection, body]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05, merge_chapter_labels=False)
+
+        levels = {e.title: e.level for e in result}
+        assert levels["Chapter 2 Topic"] == 1
+        assert levels["2.1 Section Title"] == 2
+
+    @patch("bmrk.detector.fitz")
+    def test_numeric_depth_normalized_without_anchor(self, mock_fitz):
+        # If only depth-2 numbering exists and no chapter anchor is present,
+        # infer level-1 for that depth to avoid over-nesting.
+        body = _make_span("x" * 200, 12.0, top=300)
+        subsection = _make_span("2.1 Section Title", 20.0, top=200)
+        mock_doc = _make_mock_doc([[subsection, body]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        assert len(result) == 1
+        assert result[0].title == "2.1 Section Title"
+        assert result[0].level == 1
+
+    @patch("bmrk.detector.fitz")
+    def test_chapter_anchor_forced_to_level_one(self, mock_fitz):
+        # Even if size ranking would place chapter openers lower, chapter
+        # anchors should remain top-level and numeric subsections should nest.
+        body = _make_span("x" * 200, 12.0, top=400)
+        title = _make_span("THE BOOK TITLE", 30.0, top=80)
+        chapter = _make_span("Chapter 2 Topic", 20.0, top=140)
+        subsection = _make_span("2.1 Section Title", 20.0, top=220)
+        mock_doc = _make_mock_doc([[title, chapter, subsection, body]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05, merge_chapter_labels=False)
+
+        levels = {e.title: e.level for e in result}
+        assert levels["Chapter 2 Topic"] == 1
+        assert levels["2.1 Section Title"] == 2
+
+    @patch("bmrk.detector.fitz")
+    def test_styled_chapter_anchor_is_level_one(self, mock_fitz):
+        # Chapter opener rendered at body size but styled should still be top-level.
+        body = _make_span("x" * 200, 12.0, top=300)
+        chapter = _make_span("Chapter 2 Topic", 12.0, flags=_FLAGS_ITALIC, top=200)
+        mock_doc = _make_mock_doc([[body, chapter]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05, merge_chapter_labels=False)
+
+        assert len(result) == 1
+        assert result[0].title == "Chapter 2 Topic"
+        assert result[0].level == 1
+
+    @patch("bmrk.detector.fitz")
     def test_skip_pages_excludes_leading_pages(self, mock_fitz):
         body = _make_span("body text here and more", 12.0, top=100)
         cover_heading = _make_span("Cover Title", 24.0, top=200)
@@ -555,7 +799,7 @@ class TestDetectHeadings:
         mock_doc = _make_mock_doc([[body, running_header, real_heading]])
         mock_fitz.open.return_value.__enter__.return_value = mock_doc
 
-        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05, header_margin=0.08)
 
         titles = [e.title for e in result]
         assert "FOREWORD" not in titles
@@ -648,6 +892,35 @@ class TestDetectHeadings:
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         assert result == []
+
+    @patch("bmrk.detector.fitz")
+    def test_italic_mid_paragraph_fragment_not_a_heading(self, mock_fitz):
+        # Repro for false positives like:
+        # "In a classic reference, A History of Ideas, ..."
+        # where one line is italic-heavy inside a normal paragraph.
+        before = _make_span(
+            "innovations in human history were born in the golden era at the end of",
+            12.0,
+            top=200,
+        )
+        italic_line = _make_span(
+            "In a classic reference, A History of Ideas, Author",
+            12.0,
+            flags=_FLAGS_ITALIC,
+            top=214,
+        )
+        after = _make_span(
+            "and Collaborator compile a list of major milestones",
+            12.0,
+            top=228,
+        )
+        mock_doc = _make_mock_doc([[before, italic_line, after]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        titles = [e.title for e in result]
+        assert italic_line["text"] not in titles
 
     @patch("bmrk.detector.fitz")
     def test_bibliography_italic_entries_not_detected(self, mock_fitz):
@@ -755,6 +1028,334 @@ class TestDetectHeadings:
         assert result[0].title == "Introduction"
 
     @patch("bmrk.detector.fitz")
+    def test_pass1_paragraph_lead_not_detected_as_heading(self, mock_fitz):
+        # OCR can inflate the first body line slightly above threshold.
+        # Ensure a long lead line followed by lowercase continuation is not
+        # treated as a heading.
+        section = _make_span("4. Example Topic", 11.4, top=160)
+        lead = _make_span(
+            "Clearly describe your approach and write down the key steps involved",
+            10.0,
+            top=200,
+        )
+        cont = _make_span(
+            "to ensure another reader can follow the reasoning process.",
+            9.7,
+            top=214,
+        )
+        body = _make_span("x" * 200, 9.4, top=260)
+        mock_doc = _make_mock_doc([[section, lead, cont, body]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        titles = [e.title for e in result]
+        assert "4. Example Topic" in titles
+        assert lead["text"] not in titles
+
+    @patch("bmrk.detector.fitz")
+    def test_pass1_sentence_fragment_ending_comma_not_detected(self, mock_fitz):
+        # A sentence fragment ending with comma and followed by continuation
+        # should not be treated as a heading.
+        section = _make_span("5. Example Topic", 11.4, top=160)
+        fragment = _make_span(
+            "Clearly we are evaluating option A, yet under this setup,",
+            10.0,
+            top=200,
+        )
+        cont = _make_span(
+            "Metric(X) = 0 because event probability is below threshold.",
+            9.7,
+            top=214,
+        )
+        body = _make_span("x" * 200, 9.4, top=260)
+        mock_doc = _make_mock_doc([[section, fragment, cont, body]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        titles = [e.title for e in result]
+        assert "5. Example Topic" in titles
+        assert fragment["text"] not in titles
+
+    @patch("bmrk.detector.fitz")
+    def test_pass1_sentence_fragment_with_short_continuation_not_detected(self, mock_fitz):
+        # OCR can make a sentence fragment line appear oversized; if followed
+        # by a short continuation line, suppress it as body text.
+        section = _make_span("6. Example Topic", 11.4, top=160)
+        fragment = _make_span(
+            "Clearly the expected value is the minimum time for all items to reach the",
+            12.8,
+            top=200,
+        )
+        # Larger-than-normal gap mirrors OCR jitter in scanned PDFs.
+        cont = _make_span("target.", 9.7, top=232)
+        body = _make_span("x" * 200, 9.4, top=260)
+        mock_doc = _make_mock_doc([[section, fragment, cont, body]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        titles = [e.title for e in result]
+        assert "6. Example Topic" in titles
+        assert fragment["text"] not in titles
+
+    @patch("bmrk.detector.fitz")
+    def test_pass1_sentence_like_line_before_solution_not_detected(self, mock_fitz):
+        # A sentence-like problem statement line can be oversized by OCR and
+        # followed by "Solution:" (uppercase), which should still be treated
+        # as body text rather than a heading.
+        section = _make_span("7. Example Topic", 11.4, top=160)
+        sentence = _make_span(
+            "We notice when value A exceeds value B, the estimate changes materially.",
+            10.8,
+            top=200,
+        )
+        solution = _make_span(
+            "Solution: Start with the baseline setup and apply one simplification.",
+            9.8,
+            top=230,
+        )
+        body = _make_span("x" * 200, 9.4, top=260)
+        mock_doc = _make_mock_doc([[section, sentence, solution, body]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        titles = [e.title for e in result]
+        assert "7. Example Topic" in titles
+        assert sentence["text"] not in titles
+
+    @patch("bmrk.detector.fitz")
+    def test_pass1_diagram_label_artifacts_not_detected(self, mock_fitz):
+        # OCR snippets from diagram interiors can be large but should not be
+        # treated as headings.
+        section = _make_span("8. Example Topic", 11.4, top=160)
+        diagram_token_1 = _make_span("6H )-O", 28.0, top=220)
+        diagram_token_2 = _make_span("/ \\ IN", 40.0, top=250)
+        body = _make_span("x" * 200, 9.4, top=320)
+        mock_doc = _make_mock_doc([[section, diagram_token_1, diagram_token_2, body]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        titles = [e.title for e in result]
+        assert "8. Example Topic" in titles
+        assert diagram_token_1["text"] not in titles
+        assert diagram_token_2["text"] not in titles
+
+    @patch("bmrk.detector.fitz")
+    def test_pass1_equation_lines_not_detected(self, mock_fitz):
+        section = _make_span("9. Example Topic", 11.4, top=160)
+        eq1 = _make_span("N=0=>0=d", 10.8, top=220)
+        eq2 = _make_span("N=1>1=a+b+c+d N=2>5=8a+4b+2c+d", 10.7, top=240)
+        eq3 = _make_span("sin x cos x tan x = sec x", 10.9, top=270)
+        eq4 = _make_span("What is the derivative of y = ln x^x?", 10.9, top=300)
+        eq5 = _make_span("Example technique: [u dv = uv - [v du", 10.9, top=330)
+        body = _make_span("x" * 200, 9.4, top=360)
+        mock_doc = _make_mock_doc([[section, eq1, eq2, eq3, eq4, eq5, body]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        titles = [e.title for e in result]
+        assert "9. Example Topic" in titles
+        assert eq1["text"] not in titles
+        assert eq2["text"] not in titles
+        assert eq3["text"] not in titles
+        assert eq4["text"] not in titles
+        assert eq5["text"] not in titles
+
+    @patch("bmrk.detector.fitz")
+    def test_pass1_low_quality_plain_fragments_not_detected(self, mock_fitz):
+        section = _make_span("10. Example Topic", 11.4, top=160)
+        good_subheading = _make_span("Sample Subsection", 10.9, top=200)
+        fragment1 = _make_span("X2", 10.9, top=230)
+        fragment2 = _make_span("(n+1)! 3! 5!", 10.9, top=260)
+        fragment3 = _make_span("A. What is i?", 10.9, top=290)
+        body = _make_span("x" * 200, 9.4, top=340)
+        mock_doc = _make_mock_doc(
+            [[section, good_subheading, fragment1, fragment2, fragment3, body]]
+        )
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        titles = [e.title for e in result]
+        assert "10. Example Topic" in titles
+        assert good_subheading["text"] in titles
+        assert fragment1["text"] not in titles
+        assert fragment2["text"] not in titles
+        assert fragment3["text"] not in titles
+
+    @patch("bmrk.detector.fitz")
+    def test_pass1_body_starter_with_math_continuation_not_detected(self, mock_fitz):
+        section = _make_span("11. Example Topic", 11.4, top=160)
+        sentence = _make_span("Let A be a sample value and x |", 14.0, top=210)
+        math_fragment = _make_span("x", 11.0, top=216)
+        continuation = _make_span(
+            "be its corresponding entry under this setup.",
+            9.5,
+            top=226,
+        )
+        body = _make_span("x" * 200, 9.4, top=280)
+        mock_doc = _make_mock_doc([[section, sentence, math_fragment, continuation, body]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        titles = [e.title for e in result]
+        assert "11. Example Topic" in titles
+        assert sentence["text"] not in titles
+
+    @patch("bmrk.detector.fitz")
+    def test_pass1_numeric_wrapped_question_tail_not_detected(self, mock_fitz):
+        section = _make_span("12. Example Topic", 11.4, top=160)
+        body1 = _make_span(
+            "The question statement continues on the next line and asks for exactly",
+            9.4,
+            top=220,
+        )
+        body2 = _make_span("50 items?", 10.2, top=232)
+        body3 = _make_span("Solution: Continue with the derivation here.", 9.4, top=270)
+        mock_doc = _make_mock_doc([[section, body1, body2, body3]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        titles = [e.title for e in result]
+        assert "12. Example Topic" in titles
+        assert body2["text"] not in titles
+
+    @patch("bmrk.detector.fitz")
+    def test_pass1_colon_math_label_not_detected(self, mock_fitz):
+        section = _make_span("13. Example Topic", 11.4, top=160)
+        label = _make_span("Example rule:", 10.1, top=220)
+        math1 = _make_span("x", 12.0, top=240)
+        math2 = _make_span("1/2", 12.0, top=255)
+        real_heading = _make_span("Real Subheading", 11.4, top=320)
+        body = _make_span("x" * 200, 9.4, top=350)
+        mock_doc = _make_mock_doc([[section, label, math1, math2, real_heading, body]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        titles = [e.title for e in result]
+        assert "13. Example Topic" in titles
+        assert real_heading["text"] in titles
+        assert label["text"] not in titles
+
+    @patch("bmrk.detector.fitz")
+    def test_pass1_table_band_text_not_detected(self, mock_fitz):
+        section = _make_span("14. Example Topic", 11.4, top=160)
+        intro = _make_span("We arrange values in the sample grid below.", 9.4, top=210)
+        table_row = _make_line(
+            _make_span("Label ", 14.0, top=250, left=20),
+            _make_span("1 ", 14.0, top=250, left=150),
+            _make_span("2 ", 14.0, top=250, left=210),
+            _make_span("3", 14.0, top=250, left=270),
+        )
+        fragment_label = _make_span("| Sample label", 14.0, top=290, left=20)
+        fragment_c1 = _make_span("1", 14.0, top=300, left=150)
+        fragment_c2 = _make_span("2", 14.0, top=300, left=210)
+        fragment_tail = _make_span("two", 14.0, top=311, left=20)
+        fragment_c3 = _make_span("3", 14.0, top=321, left=270)
+        real_heading = _make_span("Sample Heading", 11.4, top=360)
+        body = _make_span("x" * 200, 9.4, top=390)
+        mock_doc = _make_mock_doc(
+            [[
+                section,
+                intro,
+                table_row,
+                fragment_label,
+                fragment_c1,
+                fragment_c2,
+                fragment_tail,
+                fragment_c3,
+                real_heading,
+                body,
+            ]]
+        )
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        titles = [e.title for e in result]
+        assert "14. Example Topic" in titles
+        assert real_heading["text"] in titles
+        assert "Label 1 2 3" not in titles
+        assert fragment_label["text"] not in titles
+
+    @patch("bmrk.detector.fitz")
+    def test_pass1_table_header_above_caption_not_detected(self, mock_fitz):
+        section = _make_span("15. Example Topic", 11.4, top=120)
+        header = _make_line(
+            _make_span("Name ", 17.0, top=170, left=20),
+            _make_span("(abbr)", 17.0, top=170, left=120),
+        )
+        row1 = _make_line(
+            _make_span("Uniform ", 18.0, top=200, left=20),
+            _make_span("P(x) ", 18.0, top=200, left=150),
+            _make_span("x=a,b ", 18.0, top=200, left=230),
+            _make_span("o+a ", 18.0, top=200, left=320),
+            _make_span("|", 18.0, top=200, left=390),
+        )
+        row2 = _make_line(
+            _make_span("Poisson ", 18.0, top=235, left=20),
+            _make_span("P(x)= ", 18.0, top=235, left=150),
+            _make_span("x=0,1 ", 18.0, top=235, left=250),
+            _make_span("At", 18.0, top=235, left=340),
+        )
+        caption = _make_span("Table 2.1 Sample distributions", 9.5, top=280)
+        real_heading = _make_span("Sample Heading", 11.4, top=330)
+        body = _make_span("x" * 200, 9.4, top=360)
+        mock_doc = _make_mock_doc([[section, header, row1, row2, caption, real_heading, body]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        titles = [e.title for e in result]
+        assert "15. Example Topic" in titles
+        assert real_heading["text"] in titles
+        assert "Name (abbr)" not in titles
+
+    @patch("bmrk.detector.fitz")
+    def test_pass1_table_code_header_not_detected(self, mock_fitz):
+        section = _make_span("16. Example Topic", 11.4, top=120)
+        header = _make_line(
+            _make_span("Probability ", 13.5, top=250, left=20),
+            _make_span("AAA ", 13.5, top=250, left=170),
+            _make_span("|BBB ", 13.5, top=250, left=220),
+            _make_span("[CCC ", 13.5, top=250, left=280),
+            _make_span("|DDD ", 13.5, top=250, left=340),
+            _make_span("EEE", 13.5, top=250, left=400),
+        )
+        row1 = _make_line(
+            _make_span("CCC ", 15.0, top=320, left=30),
+            _make_span("1/2 ", 15.0, top=320, left=170),
+            _make_span("1/3 ", 15.0, top=320, left=240),
+            _make_span("2/3", 15.0, top=320, left=310),
+        )
+        row2 = _make_line(
+            _make_span("DDD ", 15.0, top=380, left=30),
+            _make_span("3/4 ", 15.0, top=380, left=170),
+            _make_span("1/2 ", 15.0, top=380, left=240),
+            _make_span("5/8", 15.0, top=380, left=310),
+        )
+        caption = _make_span("Table 3.1 Sample comparison matrix", 9.5, top=430)
+        real_heading = _make_span("Next Topic", 11.4, top=480)
+        body = _make_span("x" * 200, 9.4, top=510)
+        mock_doc = _make_mock_doc([[section, header, row1, row2, caption, real_heading, body]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        titles = [e.title for e in result]
+        assert "16. Example Topic" in titles
+        assert real_heading["text"] in titles
+        assert "Probability AAA |BBB [CCC |DDD EEE" not in titles
+
+    @patch("bmrk.detector.fitz")
     def test_wrapped_heading_merged_into_single_entry(self, mock_fitz):
         # A heading split across two PDF lines must appear as one bookmark.
         body = _make_span("body text here and more", 12.0, top=400)
@@ -845,6 +1446,73 @@ class TestDetectHeadings:
         assert len(result) == 1
         assert result[0].title == "Chapter 5 Advances in Modern Computing"
         assert result[0].level == 1
+
+    @patch("bmrk.detector.fitz")
+    def test_toc_neighbor_page_skipped_when_likely_continuation(self, mock_fitz):
+        # Page 1 has explicit TOC heading; page 2 is noisy continuation with
+        # low but non-trivial TOC-likeness and should be skipped as well.
+        p0 = [
+            _make_span("Table of Contents", 18.0, top=80),
+            _make_span("2.1 Section Title ... 3", 12.0, top=120),
+            _make_span("2.2 Section Two ... 5", 12.0, top=140),
+        ]
+        p1 = [
+            _make_span("2.3 Section Three", 12.0, top=100),
+            _make_span("Example item A .......... 10", 12.0, top=120),
+            _make_span("Example item B .......... 11", 12.0, top=140),
+            _make_span("Example item C", 12.0, top=160),
+            _make_span("Example item D", 12.0, top=180),
+            _make_span("Example item E", 12.0, top=200),
+            _make_span("Example item F", 12.0, top=220),
+            _make_span("Example item G", 12.0, top=240),
+        ]
+        p2 = [
+            _make_span("Chapter 2 Topic", 20.0, top=100),
+            _make_span("x" * 200, 12.0, top=220),
+        ]
+        mock_doc = _make_mock_doc([p0, p1, p2])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        titles = [e.title for e in result]
+        assert "Table of Contents" not in titles
+        assert "2.2 Section Two ... 5" not in titles
+        assert "Example item A .......... 10" not in titles
+        assert "Chapter 2 Topic" in titles
+
+    @patch("bmrk.detector.fitz")
+    def test_chapter_label_merged_when_title_is_one_level_deeper(self, mock_fitz):
+        # Repro for chapter-openers: "Chapter 2" and "Title"
+        # may be inferred as L1 and L2 but should still merge into one entry.
+        body = _make_span("x" * 200, 12.0, top=600)
+        label = _make_span("Chapter 2", 24.0, top=100)
+        title = _make_span("Title", 20.0, top=260)
+        mock_doc = _make_mock_doc([[label, title, body]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        assert len(result) == 1
+        assert result[0].title == "Chapter 2 Title"
+        assert result[0].level == 1
+
+    @patch("bmrk.detector.fitz")
+    def test_chapter_label_not_demoted_by_previous_page_footer(self, mock_fitz):
+        # Numeric footers from the previous page must not contribute math
+        # context to the first heading block on the next page.
+        footer = _make_span("40", 11.0, top=740, left=243.0)
+        body = _make_span("x" * 200, 12.0, top=620)
+        chapter = _make_span("Chapter 4", 24.0, top=120, left=185.0)
+        title = _make_span("Sample Topic", 30.0, top=200, left=142.0)
+        body2 = _make_span("x" * 200, 12.0, top=420)
+        mock_doc = _make_mock_doc([[body, footer], [chapter, title, body2]])
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+
+        result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
+
+        assert any(entry.title == "Chapter 4 Sample Topic" for entry in result)
+        assert not any(entry.title == "Sample Topic" for entry in result)
 
     @patch("bmrk.detector.fitz")
     def test_superscript_footnote_ref_stripped_from_heading(self, mock_fitz):
