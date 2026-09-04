@@ -141,3 +141,15 @@ class TestSourceSelection:
         result = runner.invoke(app, [pdf_with_outline, "--dry-run", "--source", "nope"])
         assert result.exit_code == 1
         assert "unknown --source" in result.output
+
+    def test_hints_at_the_override_when_using_the_outline(self, pdf_with_outline):
+        result = runner.invoke(app, [pdf_with_outline, "--dry-run"])
+        assert "--source font" in result.output
+
+    def test_no_hint_when_headings_came_from_fonts(self, pdf_without_outline):
+        result = runner.invoke(app, [pdf_without_outline, "--dry-run"])
+        assert "--source font" not in result.output
+
+    def test_hint_shown_when_writing_output(self, pdf_with_outline, tmp_path):
+        result = runner.invoke(app, [pdf_with_outline, str(tmp_path / "out.pdf")])
+        assert "--source font" in result.output

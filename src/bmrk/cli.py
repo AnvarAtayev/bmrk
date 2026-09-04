@@ -27,6 +27,12 @@ app = typer.Typer()
 
 _HEADINGS_HEADER = "# bmrk heading export\n# level\tpage\ttitle\n"
 
+_SOURCE_OUTLINE = "existing outline"
+
+# Shown whenever the PDF's own outline was used, so a reader with bad
+# bookmarks can find the override without going to --help.
+_REBUILD_HINT = "Pass --source font to ignore it and rebuild the headings."
+
 
 def _set_status(status, message: str) -> None:
     """Update the Rich status spinner with a consistently formatted message."""
@@ -381,7 +387,7 @@ def main(
                 existing = read_existing_outline(effective_input)
 
             if existing:
-                source_used = "existing outline"
+                source_used = _SOURCE_OUTLINE
                 headings = existing
                 _set_status(status, f"Using the existing outline ({len(headings)} headings)")
             elif source == "outline":
@@ -475,6 +481,8 @@ def main(
             console.print(
                 f"  Detected [bold]{len(headings)}[/bold] heading(s) from {source_used}."
             )
+            if source_used == _SOURCE_OUTLINE:
+                console.print(f"  [dim]{_REBUILD_HINT}[/dim]")
             console.print()
             console.print("  Detected TOC structure:")
             for h in headings:
@@ -500,6 +508,8 @@ def main(
             f"[bold green]bmrk:[/bold green] {output_pdf} "
             f"[dim]({len(headings)} headings from {source_used})[/dim]"
         )
+        if source_used == _SOURCE_OUTLINE:
+            console.print(f"[dim]      {_REBUILD_HINT}[/dim]")
     finally:
         status.stop()
         if tmp_ocr is not None:

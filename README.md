@@ -143,6 +143,7 @@ bmrk paper.pdf paper_bookmarked.pdf
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--source SOURCE` | `auto` | Where headings come from: `auto` uses the PDF's own bookmark outline when it has one and falls back to font analysis; `outline` requires an existing outline; `font` ignores it and always analyses fonts. |
 | `--threshold RATIO` / `-t` | `1.05` | Font-size ratio above which text is treated as a heading. Raise to `1.15` for noisy PDFs; lower to `1.01` to catch bold same-size section titles. |
 | `--verbose` / `-v` | off | Print detected headings and progress info. |
 | `--dry-run` / `-n` | off | Detect and print headings only; do not write an output file. Useful for tuning `--threshold`. |
@@ -153,6 +154,25 @@ bmrk paper.pdf paper_bookmarked.pdf
 | `--blocks-only` | off | Stop after layout/block analysis. Do not detect headings or write a PDF. |
 | `--cover-pages N` | `0` | Skip the first N pages when detecting headings (e.g. cover page). |
 | `--max-depth N` / `-d` | `3` | Maximum heading depth to include (1 = chapters only, 2 = + sections, 3 = + subsections). |
+
+### Redo bookmarks a PDF already has
+
+If a PDF ships with an outline, `bmrk` keeps it and tells you so:
+
+```bash
+bmrk book.pdf out.pdf
+# bmrk: out.pdf (27 headings from existing outline)
+#       Pass --source font to ignore it and rebuild the headings.
+```
+
+When those bookmarks are wrong, rebuild them from the page layout instead:
+
+```bash
+bmrk book.pdf out.pdf --source font
+```
+
+`--threshold`, `--max-depth` and `--cover-pages` only affect font analysis, so
+they do nothing until you pass `--source font`.
 
 ### Inspect before writing
 
