@@ -39,10 +39,14 @@ def write_bookmarks(
     writer = PdfWriter()
 
     # Clone the entire document structure (pages, metadata, forms, etc.)
-    # in one call.  Pre-existing outlines are intentionally NOT copied --
-    # bmrk is authoritative for bookmarks.
+    # in one call.  This also copies the source outline, so drop it: bmrk is
+    # authoritative for bookmarks and the entries added below must be the only
+    # ones in the output.  Without this the two are concatenated.
     notify("Cloning PDF structure")
     writer.clone_reader_document_root(reader)
+    root = writer.root_object
+    if "/Outlines" in root:
+        del root["/Outlines"]
 
     # Build bookmark tree -------------------------------------------------------
     # parent_stack[i] stores the bookmark object for the most recently added

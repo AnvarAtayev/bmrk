@@ -15,6 +15,7 @@ from bmrk.detector import (
     detect_headings,
 )
 from bmrk.layout import analyze_layout
+from bmrk.sources import read_existing_outline
 
 console = Console(highlight=False)
 
@@ -232,6 +233,18 @@ def main(
             "3 = chapters + sections + subsections, etc."
         ),
     ),
+    source: str = typer.Option(
+        "auto",
+        "--source",
+        metavar="SOURCE",
+        help=(
+            "Where the heading structure comes from: auto, outline, or font. "
+            "'auto' (default) uses the PDF's own bookmark outline when it has one "
+            "and falls back to font analysis otherwise. 'outline' requires an "
+            "existing outline. 'font' ignores it and always analyses fonts. "
+            "--threshold, --max-depth and --cover-pages apply to font analysis only."
+        ),
+    ),
 ) -> None:
     """
     Add navigable bookmarks to a PDF based on its heading structure.
@@ -268,6 +281,15 @@ def main(
 
     if not Path(input_pdf).exists():
         typer.secho(f"Error: input file not found: {input_pdf}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    source = source.strip().lower()
+    if source not in {"auto", "outline", "font"}:
+        typer.secho(
+            f"Error: unknown --source {source!r}. Use auto, outline, or font.",
+            fg=typer.colors.RED,
+            err=True,
+        )
         raise typer.Exit(code=1)
 
     if import_headings is not None and export_headings is not None:
@@ -344,6 +366,7 @@ def main(
             raise typer.Exit()
 
         if import_headings is not None:
+            source_used = "imported file"
             _set_status(status, f"Loading headings from {import_headings}")
             try:
                 headings = _load_headings(import_headings, max_depth=max_depth)
@@ -352,47 +375,66 @@ def main(
                 typer.secho(f"  Cannot read headings file: {exc}", fg=typer.colors.RED)
                 raise typer.Exit(code=1)
         else:
-            status.stop()
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[bold]bmrk:[/bold] Detecting headings"),
-                BarColumn(),
-                MofNCompleteColumn(),
-                transient=True,
-                console=console,
-            ) as progress:
-                task = progress.add_task("Detecting headings", total=None)
+            existing: list[HeadingEntry] = []
+            if source != "font":
+                _set_status(status, "Checking for an existing PDF outline")
+                existing = read_existing_outline(effective_input)
 
-                def on_page(current: int, total: int) -> None:
-                    progress.update(task, completed=current + 1, total=total)
+            if existing:
+                source_used = "existing outline"
+                headings = existing
+                _set_status(status, f"Using the existing outline ({len(headings)} headings)")
+            elif source == "outline":
+                status.stop()
+                typer.secho(
+                    "  This PDF has no bookmark outline to read. Re-run with "
+                    "--source auto or --source font to analyse fonts instead.",
+                    fg=typer.colors.YELLOW,
+                )
+                raise typer.Exit(code=1)
+            else:
+                source_used = "font analysis"
+                status.stop()
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[bold]bmrk:[/bold] Detecting headings"),
+                    BarColumn(),
+                    MofNCompleteColumn(),
+                    transient=True,
+                    console=console,
+                ) as progress:
+                    task = progress.add_task("Detecting headings", total=None)
 
-                try:
-                    if layout is not None:
-                        headings = build_headings_from_layout(
-                            layout,
-                            size_threshold_ratio=threshold,
-                            max_depth=max_depth,
+                    def on_page(current: int, total: int) -> None:
+                        progress.update(task, completed=current + 1, total=total)
+
+                    try:
+                        if layout is not None:
+                            headings = build_headings_from_layout(
+                                layout,
+                                size_threshold_ratio=threshold,
+                                max_depth=max_depth,
+                            )
+                        else:
+                            detect_kwargs = {
+                                "size_threshold_ratio": threshold,
+                                "on_page": on_page,
+                                "skip_pages": cover_pages,
+                                "max_depth": max_depth,
+                            }
+                            headings = detect_headings(
+                                effective_input,
+                                **detect_kwargs,
+                            )
+                    except NoReadableTextError as exc:
+                        typer.secho(f"  Warning: {exc}", fg=typer.colors.YELLOW)
+                        typer.secho(
+                            "  No output file written.",
+                            fg=typer.colors.YELLOW,
                         )
-                    else:
-                        detect_kwargs = {
-                            "size_threshold_ratio": threshold,
-                            "on_page": on_page,
-                            "skip_pages": cover_pages,
-                            "max_depth": max_depth,
-                        }
-                        headings = detect_headings(
-                            effective_input,
-                            **detect_kwargs,
-                        )
-                except NoReadableTextError as exc:
-                    typer.secho(f"  Warning: {exc}", fg=typer.colors.YELLOW)
-                    typer.secho(
-                        "  No output file written.",
-                        fg=typer.colors.YELLOW,
-                    )
-                    raise typer.Exit(code=1)
-            status.start()
-            _set_status(status, f"Finalising heading set ({len(headings)} headings)")
+                        raise typer.Exit(code=1)
+                status.start()
+                _set_status(status, f"Finalising heading set ({len(headings)} headings)")
 
         # ------------------------------------------------------------------
         # Export headings to file if requested
@@ -430,7 +472,9 @@ def main(
 
         if dry_run or verbose or not write_output:
             status.stop()
-            console.print(f"  Detected [bold]{len(headings)}[/bold] heading(s).")
+            console.print(
+                f"  Detected [bold]{len(headings)}[/bold] heading(s) from {source_used}."
+            )
             console.print()
             console.print("  Detected TOC structure:")
             for h in headings:
@@ -453,7 +497,8 @@ def main(
         )
         status.stop()
         console.print(
-            f"[bold green]bmrk:[/bold green] {output_pdf} [dim]({len(headings)} headings)[/dim]"
+            f"[bold green]bmrk:[/bold green] {output_pdf} "
+            f"[dim]({len(headings)} headings from {source_used})[/dim]"
         )
     finally:
         status.stop()
