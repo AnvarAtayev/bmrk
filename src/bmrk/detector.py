@@ -4,8 +4,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TypedDict
 
-import fitz  # noqa: F401 - compatibility shim for tests/layout extraction patching
-
 from bmrk.layout import BlockLabel, DocumentBlock, _merge_vertical_bands, analyze_layout
 
 log = logging.getLogger("bmrk")

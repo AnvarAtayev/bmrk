@@ -472,7 +472,7 @@ class TestIsTocPage:
 
 
 # ---------------------------------------------------------------------------
-# detect_headings (fitz/PyMuPDF mocked)
+# detect_headings (PyMuPDF mocked)
 # ---------------------------------------------------------------------------
 
 _FLAGS_REGULAR = 0
@@ -511,7 +511,7 @@ def _make_line(*spans: dict) -> dict:
 
 def _make_mock_doc(spans: list[list[dict]], page_height: float = 792.0):
     """
-    Build a mock fitz document.
+    Build a mock PyMuPDF document.
 
     spans: list of span-dict lists, one per page.  Each span dict becomes
     its own line within a single text block on that page.
@@ -549,21 +549,21 @@ def _make_mock_doc(spans: list[list[dict]], page_height: float = 792.0):
 
 
 class TestDetectHeadings:
-    @patch("bmrk.detector.fitz")
-    def test_empty_pdf_raises_no_readable_text_error(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_empty_pdf_raises_no_readable_text_error(self, mock_pymupdf):
         mock_doc = _make_mock_doc([[]])  # one page, no spans
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         with pytest.raises(NoReadableTextError):
             detect_headings("dummy.pdf")
 
-    @patch("bmrk.detector.fitz")
-    def test_font_size_heading_detected(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_font_size_heading_detected(self, mock_pymupdf):
         # Body at 12pt (long text dominates), heading at 18pt
         body = _make_span("body text here and more", 12.0, top=100)
         heading = _make_span("Introduction", 18.0, top=200)
         mock_doc = _make_mock_doc([[body, heading]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -572,13 +572,13 @@ class TestDetectHeadings:
         assert result[0].level == 1
         assert result[0].page == 0
 
-    @patch("bmrk.detector.fitz")
-    def test_numeric_prefix_heading_detected(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_numeric_prefix_heading_detected(self, mock_pymupdf):
         # All same font size -- only numeric prefix triggers detection
         body = _make_span("body text here and more", 12.0, top=100)
         section = _make_span("1  Introduction", 12.0, top=200)
         mock_doc = _make_mock_doc([[body, section]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -586,23 +586,23 @@ class TestDetectHeadings:
         assert result[0].title == "1  Introduction"
         assert result[0].level == 1
 
-    @patch("bmrk.detector.fitz")
-    def test_numeric_table_row_not_detected_as_heading(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_numeric_table_row_not_detected_as_heading(self, mock_pymupdf):
         body = _make_span("body text here and more", 12.0, top=100)
         table_vals = _make_span("1.623 5.018 8.000 10.613 12.199", 12.0, top=200)
         mock_doc = _make_mock_doc([[body, table_vals]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         assert result == []
 
-    @patch("bmrk.detector.fitz")
-    def test_subsection_numeric_prefix_depth(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_subsection_numeric_prefix_depth(self, mock_pymupdf):
         body = _make_span("body text here and more", 12.0, top=100)
         subsection = _make_span("2.3  Methods", 12.0, top=200)
         mock_doc = _make_mock_doc([[body, subsection]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -611,25 +611,25 @@ class TestDetectHeadings:
         # depth to level 1 for this document.
         assert result[0].level == 1
 
-    @patch("bmrk.detector.fitz")
-    def test_noise_line_not_a_heading(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_noise_line_not_a_heading(self, mock_pymupdf):
         # "42" with large font -- should be filtered as noise
         body = _make_span("body text here and more", 12.0, top=100)
         noise = _make_span("42", 18.0, top=200)
         mock_doc = _make_mock_doc([[body, noise]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         assert result == []
 
-    @patch("bmrk.detector.fitz")
-    def test_multiple_heading_levels_assigned(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_multiple_heading_levels_assigned(self, mock_pymupdf):
         h1 = _make_span("Chapter One", 20.0, top=100)
         h2 = _make_span("Section 1.1", 16.0, top=200)
         body = _make_span("body text here and more", 12.0, top=300)
         mock_doc = _make_mock_doc([[h1, h2, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -639,14 +639,14 @@ class TestDetectHeadings:
         assert h1_entry.level == 1
         assert h2_entry.level == 2
 
-    @patch("bmrk.detector.fitz")
-    def test_max_depth_filters_deeper_headings(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_max_depth_filters_deeper_headings(self, mock_pymupdf):
         # With max_depth=1 only H1 headings should remain; H2 is dropped.
         h1 = _make_span("Chapter One", 20.0, top=100)
         h2 = _make_span("Section 1.1", 16.0, top=200)
         body = _make_span("body text here and more", 12.0, top=300)
         mock_doc = _make_mock_doc([[h1, h2, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05, max_depth=1)
 
@@ -654,14 +654,14 @@ class TestDetectHeadings:
         assert result[0].title == "Chapter One"
         assert result[0].level == 1
 
-    @patch("bmrk.detector.fitz")
-    def test_max_depth_2_keeps_h1_and_h2(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_max_depth_2_keeps_h1_and_h2(self, mock_pymupdf):
         h1 = _make_span("Chapter One", 20.0, top=100)
         h2 = _make_span("Section 1.1", 16.0, top=200)
         h3 = _make_span("Detail", 14.0, top=300)
         body = _make_span("body text here and more", 12.0, top=400)
         mock_doc = _make_mock_doc([[h1, h2, h3, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05, max_depth=2)
 
@@ -670,27 +670,27 @@ class TestDetectHeadings:
         assert "Section 1.1" in titles
         assert "Detail" not in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_adjacent_duplicate_titles_deduplicated(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_adjacent_duplicate_titles_deduplicated(self, mock_pymupdf):
         # Same heading text twice in a row (running header pattern)
         heading1 = _make_span("Methods", 18.0, top=100)
         heading2 = _make_span("Methods", 18.0, top=200)
         body = _make_span("body text here and more", 12.0, top=300)
         mock_doc = _make_mock_doc([[heading1, heading2, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         methods_entries = [e for e in result if e.title == "Methods"]
         assert len(methods_entries) == 1
 
-    @patch("bmrk.detector.fitz")
-    def test_headings_across_multiple_pages(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_headings_across_multiple_pages(self, mock_pymupdf):
         body = _make_span("body text here and more", 12.0, top=100)
         h_p0 = _make_span("Introduction", 18.0, top=200)
         h_p1 = _make_span("Conclusion", 18.0, top=200)
         mock_doc = _make_mock_doc([[body, h_p0], [body, h_p1]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -700,29 +700,29 @@ class TestDetectHeadings:
         assert result[1].title == "Conclusion"
         assert result[1].page == 1
 
-    @patch("bmrk.detector.fitz")
-    def test_font_size_takes_priority_over_numeric_prefix(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_font_size_takes_priority_over_numeric_prefix(self, mock_pymupdf):
         # A line matching both signals: font-size level should win
         body = _make_span("body text here and more", 12.0, top=100)
         # "1.2  Sub" at 20pt -- font-size gives level 1, numeric gives level 2
         heading = _make_span("1.2  Sub", 20.0, top=200)
         mock_doc = _make_mock_doc([[body, heading]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         assert len(result) == 1
         assert result[0].level == 1
 
-    @patch("bmrk.detector.fitz")
-    def test_numeric_signal_deepens_level_when_chapter_anchor_present(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_numeric_signal_deepens_level_when_chapter_anchor_present(self, mock_pymupdf):
         # Chapter and subsection share the same size; numeric depth should still
         # infer subsection nesting when a chapter anchor exists.
         body = _make_span("x" * 200, 12.0, top=300)
         chapter = _make_span("Chapter 2 Topic", 20.0, top=100)
         subsection = _make_span("2.1 Section Title", 20.0, top=200)
         mock_doc = _make_mock_doc([[chapter, subsection, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05, merge_chapter_labels=False)
 
@@ -730,14 +730,14 @@ class TestDetectHeadings:
         assert levels["Chapter 2 Topic"] == 1
         assert levels["2.1 Section Title"] == 2
 
-    @patch("bmrk.detector.fitz")
-    def test_numeric_depth_normalized_without_anchor(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_numeric_depth_normalized_without_anchor(self, mock_pymupdf):
         # If only depth-2 numbering exists and no chapter anchor is present,
         # infer level-1 for that depth to avoid over-nesting.
         body = _make_span("x" * 200, 12.0, top=300)
         subsection = _make_span("2.1 Section Title", 20.0, top=200)
         mock_doc = _make_mock_doc([[subsection, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -745,8 +745,8 @@ class TestDetectHeadings:
         assert result[0].title == "2.1 Section Title"
         assert result[0].level == 1
 
-    @patch("bmrk.detector.fitz")
-    def test_chapter_anchor_forced_to_level_one(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_chapter_anchor_forced_to_level_one(self, mock_pymupdf):
         # Even if size ranking would place chapter openers lower, chapter
         # anchors should remain top-level and numeric subsections should nest.
         body = _make_span("x" * 200, 12.0, top=400)
@@ -754,7 +754,7 @@ class TestDetectHeadings:
         chapter = _make_span("Chapter 2 Topic", 20.0, top=140)
         subsection = _make_span("2.1 Section Title", 20.0, top=220)
         mock_doc = _make_mock_doc([[title, chapter, subsection, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05, merge_chapter_labels=False)
 
@@ -762,13 +762,13 @@ class TestDetectHeadings:
         assert levels["Chapter 2 Topic"] == 1
         assert levels["2.1 Section Title"] == 2
 
-    @patch("bmrk.detector.fitz")
-    def test_styled_chapter_anchor_is_level_one(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_styled_chapter_anchor_is_level_one(self, mock_pymupdf):
         # Chapter opener rendered at body size but styled should still be top-level.
         body = _make_span("x" * 200, 12.0, top=300)
         chapter = _make_span("Chapter 2 Topic", 12.0, flags=_FLAGS_ITALIC, top=200)
         mock_doc = _make_mock_doc([[body, chapter]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05, merge_chapter_labels=False)
 
@@ -776,13 +776,13 @@ class TestDetectHeadings:
         assert result[0].title == "Chapter 2 Topic"
         assert result[0].level == 1
 
-    @patch("bmrk.detector.fitz")
-    def test_skip_pages_excludes_leading_pages(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_skip_pages_excludes_leading_pages(self, mock_pymupdf):
         body = _make_span("body text here and more", 12.0, top=100)
         cover_heading = _make_span("Cover Title", 24.0, top=200)
         real_heading = _make_span("Introduction", 18.0, top=200)
         mock_doc = _make_mock_doc([[body, cover_heading], [body, real_heading]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", skip_pages=1)
 
@@ -790,14 +790,14 @@ class TestDetectHeadings:
         assert "Cover Title" not in titles
         assert "Introduction" in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_margin_header_excluded_from_headings(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_margin_header_excluded_from_headings(self, mock_pymupdf):
         # Running header in the top margin (top=20 on a 792pt page => 2.5%, inside 8% zone)
         body = _make_span("body text here and more", 12.0, top=100)
         running_header = _make_span("FOREWORD", 18.0, top=20)  # inside header margin
         real_heading = _make_span("Introduction", 18.0, top=150)
         mock_doc = _make_mock_doc([[body, running_header, real_heading]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05, header_margin=0.08)
 
@@ -805,8 +805,8 @@ class TestDetectHeadings:
         assert "FOREWORD" not in titles
         assert "Introduction" in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_running_header_deduplicated_across_pages(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_running_header_deduplicated_across_pages(self, mock_pymupdf):
         # "FOREWORD" appears as a heading on 4 consecutive pages -- only the
         # first occurrence (the actual chapter start) should be kept.
         body = _make_span("body text here and more", 12.0, top=100)
@@ -819,7 +819,7 @@ class TestDetectHeadings:
                 [body, heading],
             ]
         )
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -827,24 +827,24 @@ class TestDetectHeadings:
         assert len(foreword_entries) == 1
         assert foreword_entries[0].page == 0  # only the first page kept
 
-    @patch("bmrk.detector.fitz")
-    def test_on_page_callback_called_for_each_page(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_on_page_callback_called_for_each_page(self, mock_pymupdf):
         body = _make_span("body text here and more", 12.0, top=400)
         mock_doc = _make_mock_doc([[body], [body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         calls: list[tuple[int, int]] = []
         detect_headings("dummy.pdf", on_page=lambda cur, tot: calls.append((cur, tot)))
 
         assert calls == [(0, 2), (1, 2)]
 
-    @patch("bmrk.detector.fitz")
-    def test_italic_body_size_heading_detected(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_italic_body_size_heading_detected(self, mock_pymupdf):
         # Italic text at body size should be captured as a level-3 heading
         body = _make_span("body text here and more", 12.0, flags=_FLAGS_REGULAR, top=100)
         italic_heading = _make_span("Abstract", 12.0, flags=_FLAGS_ITALIC, top=200)
         mock_doc = _make_mock_doc([[body, italic_heading]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -852,8 +852,8 @@ class TestDetectHeadings:
         assert result[0].title == "Abstract"
         assert result[0].level == 3
 
-    @patch("bmrk.detector.fitz")
-    def test_italic_too_long_not_a_heading(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_italic_too_long_not_a_heading(self, mock_pymupdf):
         # Very long italic line (bibliography, body sentence) must be suppressed
         body = _make_span("body text here and more", 12.0, top=100)
         bib = _make_span(
@@ -863,38 +863,38 @@ class TestDetectHeadings:
             top=200,
         )
         mock_doc = _make_mock_doc([[body, bib]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         assert result == []
 
-    @patch("bmrk.detector.fitz")
-    def test_italic_lowercase_start_not_a_heading(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_italic_lowercase_start_not_a_heading(self, mock_pymupdf):
         # Italic line starting with lowercase is a sentence continuation, not a heading
         body = _make_span("body text here and more", 12.0, top=100)
         fragment = _make_span("continued on the next line", 12.0, flags=_FLAGS_ITALIC, top=200)
         mock_doc = _make_mock_doc([[body, fragment]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         assert result == []
 
-    @patch("bmrk.detector.fitz")
-    def test_italic_ends_period_not_a_heading(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_italic_ends_period_not_a_heading(self, mock_pymupdf):
         # Italic line ending with a period is a sentence/dedication, not a heading
         body = _make_span("body text here and more", 12.0, top=100)
         dedication = _make_span("To my family.", 12.0, flags=_FLAGS_ITALIC, top=200)
         mock_doc = _make_mock_doc([[body, dedication]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         assert result == []
 
-    @patch("bmrk.detector.fitz")
-    def test_italic_mid_paragraph_fragment_not_a_heading(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_italic_mid_paragraph_fragment_not_a_heading(self, mock_pymupdf):
         # Repro for false positives like:
         # "In a classic reference, A History of Ideas, ..."
         # where one line is italic-heavy inside a normal paragraph.
@@ -915,15 +915,15 @@ class TestDetectHeadings:
             top=228,
         )
         mock_doc = _make_mock_doc([[before, italic_line, after]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         titles = [e.title for e in result]
         assert italic_line["text"] not in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_bibliography_italic_entries_not_detected(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_bibliography_italic_entries_not_detected(self, mock_pymupdf):
         # Italic book titles inside a bibliography section must not be picked
         # up as styled headings.  "Bibliography" itself (large font) is fine.
         body = _make_span("x" * 200, 12.0, top=100)
@@ -935,7 +935,7 @@ class TestDetectHeadings:
             top=300,
         )
         mock_doc = _make_mock_doc([[body, bib_heading, bib_entry]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -943,8 +943,8 @@ class TestDetectHeadings:
         assert "Bibliography" in titles
         assert "From Dawn to Decadence" not in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_wrapped_italic_heading_merged(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_wrapped_italic_heading_merged(self, mock_pymupdf):
         # An italic subsection title that wraps across two lines should be
         # merged into a single heading.
         body = _make_span("x" * 200, 12.0, top=100)
@@ -961,7 +961,7 @@ class TestDetectHeadings:
             top=314,
         )
         mock_doc = _make_mock_doc([[body, line1, line2]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -969,15 +969,15 @@ class TestDetectHeadings:
         assert result[0].title == ("Distributed Systems and Their Applications in Practice")
         assert result[0].level == 3
 
-    @patch("bmrk.detector.fitz")
-    def test_numeric_prefix_requires_two_spaces(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_numeric_prefix_requires_two_spaces(self, mock_pymupdf):
         # "A sentence" (1 space) must NOT be detected as a heading via numeric prefix.
         # Only "A  Heading" (2+ spaces) qualifies.
         body = _make_span("body text here and more", 12.0, top=100)
         false_positive = _make_span("A sentence starting with capital letter", 12.0, top=200)
         real_heading = _make_span("A  Appendix Title", 12.0, top=300)
         mock_doc = _make_mock_doc([[body, false_positive, real_heading]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -985,21 +985,21 @@ class TestDetectHeadings:
         assert "A sentence starting with capital letter" not in titles
         assert "A  Appendix Title" in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_pass1_lowercase_start_not_a_heading(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_pass1_lowercase_start_not_a_heading(self, mock_pymupdf):
         # A large-font line starting with a lowercase letter (e.g. "by Author Name")
         # is a byline or sentence fragment, not a heading.
         body = _make_span("body text here and more", 12.0, top=100)
         byline = _make_span("by Jane Smith", 18.0, top=200)
         mock_doc = _make_mock_doc([[body, byline]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         assert result == []
 
-    @patch("bmrk.detector.fitz")
-    def test_pass1_trailing_period_not_a_heading(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_pass1_trailing_period_not_a_heading(self, mock_pymupdf):
         # A large-font line ending with a period is a sentence (dedication, caption),
         # not a heading.
         body = _make_span("body text here and more", 12.0, top=100)
@@ -1007,28 +1007,28 @@ class TestDetectHeadings:
             "To my wife and daughter, who give me a reason to write.", 14.0, top=200
         )
         mock_doc = _make_mock_doc([[body, dedication]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         assert result == []
 
-    @patch("bmrk.detector.fitz")
-    def test_pass1_normal_heading_not_filtered(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_pass1_normal_heading_not_filtered(self, mock_pymupdf):
         # A valid large-font heading with uppercase start and no trailing period
         # must still be detected normally after the new guards.
         body = _make_span("body text here and more", 12.0, top=100)
         heading = _make_span("Introduction", 18.0, top=200)
         mock_doc = _make_mock_doc([[body, heading]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         assert len(result) == 1
         assert result[0].title == "Introduction"
 
-    @patch("bmrk.detector.fitz")
-    def test_pass1_paragraph_lead_not_detected_as_heading(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_pass1_paragraph_lead_not_detected_as_heading(self, mock_pymupdf):
         # OCR can inflate the first body line slightly above threshold.
         # Ensure a long lead line followed by lowercase continuation is not
         # treated as a heading.
@@ -1045,7 +1045,7 @@ class TestDetectHeadings:
         )
         body = _make_span("x" * 200, 9.4, top=260)
         mock_doc = _make_mock_doc([[section, lead, cont, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1053,8 +1053,8 @@ class TestDetectHeadings:
         assert "4. Example Topic" in titles
         assert lead["text"] not in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_pass1_sentence_fragment_ending_comma_not_detected(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_pass1_sentence_fragment_ending_comma_not_detected(self, mock_pymupdf):
         # A sentence fragment ending with comma and followed by continuation
         # should not be treated as a heading.
         section = _make_span("5. Example Topic", 11.4, top=160)
@@ -1070,7 +1070,7 @@ class TestDetectHeadings:
         )
         body = _make_span("x" * 200, 9.4, top=260)
         mock_doc = _make_mock_doc([[section, fragment, cont, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1078,8 +1078,8 @@ class TestDetectHeadings:
         assert "5. Example Topic" in titles
         assert fragment["text"] not in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_pass1_sentence_fragment_with_short_continuation_not_detected(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_pass1_sentence_fragment_with_short_continuation_not_detected(self, mock_pymupdf):
         # OCR can make a sentence fragment line appear oversized; if followed
         # by a short continuation line, suppress it as body text.
         section = _make_span("6. Example Topic", 11.4, top=160)
@@ -1092,7 +1092,7 @@ class TestDetectHeadings:
         cont = _make_span("target.", 9.7, top=232)
         body = _make_span("x" * 200, 9.4, top=260)
         mock_doc = _make_mock_doc([[section, fragment, cont, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1100,8 +1100,8 @@ class TestDetectHeadings:
         assert "6. Example Topic" in titles
         assert fragment["text"] not in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_pass1_sentence_like_line_before_solution_not_detected(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_pass1_sentence_like_line_before_solution_not_detected(self, mock_pymupdf):
         # A sentence-like problem statement line can be oversized by OCR and
         # followed by "Solution:" (uppercase), which should still be treated
         # as body text rather than a heading.
@@ -1118,7 +1118,7 @@ class TestDetectHeadings:
         )
         body = _make_span("x" * 200, 9.4, top=260)
         mock_doc = _make_mock_doc([[section, sentence, solution, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1126,8 +1126,8 @@ class TestDetectHeadings:
         assert "7. Example Topic" in titles
         assert sentence["text"] not in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_pass1_diagram_label_artifacts_not_detected(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_pass1_diagram_label_artifacts_not_detected(self, mock_pymupdf):
         # OCR snippets from diagram interiors can be large but should not be
         # treated as headings.
         section = _make_span("8. Example Topic", 11.4, top=160)
@@ -1135,7 +1135,7 @@ class TestDetectHeadings:
         diagram_token_2 = _make_span("/ \\ IN", 40.0, top=250)
         body = _make_span("x" * 200, 9.4, top=320)
         mock_doc = _make_mock_doc([[section, diagram_token_1, diagram_token_2, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1144,8 +1144,8 @@ class TestDetectHeadings:
         assert diagram_token_1["text"] not in titles
         assert diagram_token_2["text"] not in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_pass1_equation_lines_not_detected(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_pass1_equation_lines_not_detected(self, mock_pymupdf):
         section = _make_span("9. Example Topic", 11.4, top=160)
         eq1 = _make_span("N=0=>0=d", 10.8, top=220)
         eq2 = _make_span("N=1>1=a+b+c+d N=2>5=8a+4b+2c+d", 10.7, top=240)
@@ -1154,7 +1154,7 @@ class TestDetectHeadings:
         eq5 = _make_span("Example technique: [u dv = uv - [v du", 10.9, top=330)
         body = _make_span("x" * 200, 9.4, top=360)
         mock_doc = _make_mock_doc([[section, eq1, eq2, eq3, eq4, eq5, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1166,8 +1166,8 @@ class TestDetectHeadings:
         assert eq4["text"] not in titles
         assert eq5["text"] not in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_pass1_low_quality_plain_fragments_not_detected(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_pass1_low_quality_plain_fragments_not_detected(self, mock_pymupdf):
         section = _make_span("10. Example Topic", 11.4, top=160)
         good_subheading = _make_span("Sample Subsection", 10.9, top=200)
         fragment1 = _make_span("X2", 10.9, top=230)
@@ -1177,7 +1177,7 @@ class TestDetectHeadings:
         mock_doc = _make_mock_doc(
             [[section, good_subheading, fragment1, fragment2, fragment3, body]]
         )
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1188,8 +1188,8 @@ class TestDetectHeadings:
         assert fragment2["text"] not in titles
         assert fragment3["text"] not in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_pass1_body_starter_with_math_continuation_not_detected(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_pass1_body_starter_with_math_continuation_not_detected(self, mock_pymupdf):
         section = _make_span("11. Example Topic", 11.4, top=160)
         sentence = _make_span("Let A be a sample value and x |", 14.0, top=210)
         math_fragment = _make_span("x", 11.0, top=216)
@@ -1200,7 +1200,7 @@ class TestDetectHeadings:
         )
         body = _make_span("x" * 200, 9.4, top=280)
         mock_doc = _make_mock_doc([[section, sentence, math_fragment, continuation, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1208,8 +1208,8 @@ class TestDetectHeadings:
         assert "11. Example Topic" in titles
         assert sentence["text"] not in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_pass1_numeric_wrapped_question_tail_not_detected(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_pass1_numeric_wrapped_question_tail_not_detected(self, mock_pymupdf):
         section = _make_span("12. Example Topic", 11.4, top=160)
         body1 = _make_span(
             "The question statement continues on the next line and asks for exactly",
@@ -1219,7 +1219,7 @@ class TestDetectHeadings:
         body2 = _make_span("50 items?", 10.2, top=232)
         body3 = _make_span("Solution: Continue with the derivation here.", 9.4, top=270)
         mock_doc = _make_mock_doc([[section, body1, body2, body3]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1227,8 +1227,8 @@ class TestDetectHeadings:
         assert "12. Example Topic" in titles
         assert body2["text"] not in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_pass1_colon_math_label_not_detected(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_pass1_colon_math_label_not_detected(self, mock_pymupdf):
         section = _make_span("13. Example Topic", 11.4, top=160)
         label = _make_span("Example rule:", 10.1, top=220)
         math1 = _make_span("x", 12.0, top=240)
@@ -1236,7 +1236,7 @@ class TestDetectHeadings:
         real_heading = _make_span("Real Subheading", 11.4, top=320)
         body = _make_span("x" * 200, 9.4, top=350)
         mock_doc = _make_mock_doc([[section, label, math1, math2, real_heading, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1245,8 +1245,8 @@ class TestDetectHeadings:
         assert real_heading["text"] in titles
         assert label["text"] not in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_pass1_table_band_text_not_detected(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_pass1_table_band_text_not_detected(self, mock_pymupdf):
         section = _make_span("14. Example Topic", 11.4, top=160)
         intro = _make_span("We arrange values in the sample grid below.", 9.4, top=210)
         table_row = _make_line(
@@ -1276,7 +1276,7 @@ class TestDetectHeadings:
                 body,
             ]]
         )
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1286,8 +1286,8 @@ class TestDetectHeadings:
         assert "Label 1 2 3" not in titles
         assert fragment_label["text"] not in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_pass1_table_header_above_caption_not_detected(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_pass1_table_header_above_caption_not_detected(self, mock_pymupdf):
         section = _make_span("15. Example Topic", 11.4, top=120)
         header = _make_line(
             _make_span("Name ", 17.0, top=170, left=20),
@@ -1310,7 +1310,7 @@ class TestDetectHeadings:
         real_heading = _make_span("Sample Heading", 11.4, top=330)
         body = _make_span("x" * 200, 9.4, top=360)
         mock_doc = _make_mock_doc([[section, header, row1, row2, caption, real_heading, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1319,8 +1319,8 @@ class TestDetectHeadings:
         assert real_heading["text"] in titles
         assert "Name (abbr)" not in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_pass1_table_code_header_not_detected(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_pass1_table_code_header_not_detected(self, mock_pymupdf):
         section = _make_span("16. Example Topic", 11.4, top=120)
         header = _make_line(
             _make_span("Probability ", 13.5, top=250, left=20),
@@ -1346,7 +1346,7 @@ class TestDetectHeadings:
         real_heading = _make_span("Next Topic", 11.4, top=480)
         body = _make_span("x" * 200, 9.4, top=510)
         mock_doc = _make_mock_doc([[section, header, row1, row2, caption, real_heading, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1355,29 +1355,29 @@ class TestDetectHeadings:
         assert real_heading["text"] in titles
         assert "Probability AAA |BBB [CCC |DDD EEE" not in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_wrapped_heading_merged_into_single_entry(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_wrapped_heading_merged_into_single_entry(self, mock_pymupdf):
         # A heading split across two PDF lines must appear as one bookmark.
         body = _make_span("body text here and more", 12.0, top=400)
         line1 = _make_span("COMPUTATIONAL", 24.0, top=100)
         line2 = _make_span("METHODS", 24.0, top=130)  # gap=30 < 24*1.8
         mock_doc = _make_mock_doc([[line1, line2, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         assert len(result) == 1
         assert result[0].title == "COMPUTATIONAL METHODS"
 
-    @patch("bmrk.detector.fitz")
-    def test_separate_headings_same_size_not_merged(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_separate_headings_same_size_not_merged(self, mock_pymupdf):
         # Two section headings at the same font size but far apart must remain
         # as distinct bookmarks even after the merge pass.
         body = _make_span("body text here and more", 12.0, top=200)
         h1 = _make_span("Introduction", 18.0, top=100)
         h2 = _make_span("Methods", 18.0, top=600)  # gap=500 >> 18*1.8
         mock_doc = _make_mock_doc([[h1, body, h2]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1385,14 +1385,14 @@ class TestDetectHeadings:
         assert "Introduction" in titles
         assert "Methods" in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_chapter_label_merged_with_title(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_chapter_label_merged_with_title(self, mock_pymupdf):
         # "Chapter 1" followed by "Introduction" on the same page -> merged.
         body = _make_span("body text here and more", 12.0, top=500)
         label = _make_span("Chapter 1", 16.0, top=100)
         title = _make_span("Introduction", 24.0, top=250)
         mock_doc = _make_mock_doc([[label, title, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1400,14 +1400,14 @@ class TestDetectHeadings:
         assert result[0].title == "Chapter 1 Introduction"
         assert result[0].level == 1
 
-    @patch("bmrk.detector.fitz")
-    def test_chapter_label_merge_disabled(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_chapter_label_merge_disabled(self, mock_pymupdf):
         # With merge_chapter_labels=False the label and title stay separate.
         body = _make_span("body text here and more", 12.0, top=500)
         label = _make_span("Chapter 1", 16.0, top=100)
         title = _make_span("Introduction", 24.0, top=250)
         mock_doc = _make_mock_doc([[label, title, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05, merge_chapter_labels=False)
 
@@ -1415,15 +1415,15 @@ class TestDetectHeadings:
         assert "Chapter 1" in titles
         assert "Introduction" in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_non_label_headings_not_merged(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_non_label_headings_not_merged(self, mock_pymupdf):
         # Two consecutive headings on the same page where neither is a
         # chapter/part label must remain as separate bookmarks.
         body = _make_span("body text here and more", 12.0, top=500)
         h1 = _make_span("Abstract", 18.0, top=100)
         h2 = _make_span("Introduction", 18.0, top=300)
         mock_doc = _make_mock_doc([[h1, h2, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1431,15 +1431,15 @@ class TestDetectHeadings:
         assert "Abstract" in titles
         assert "Introduction" in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_chapter_label_merged_with_wrapped_title(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_chapter_label_merged_with_wrapped_title(self, mock_pymupdf):
         # "Chapter 5" followed by a title that wraps across two PDF lines.
         body = _make_span("x" * 200, 12.0, top=600)
         label = _make_span("Chapter 5", 16.0, top=100)
         line1 = _make_span("Advances in Modern", 24.0, top=250)
         line2 = _make_span("Computing", 24.0, top=280)  # gap=30 < 24*1.8
         mock_doc = _make_mock_doc([[label, line1, line2, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1447,8 +1447,8 @@ class TestDetectHeadings:
         assert result[0].title == "Chapter 5 Advances in Modern Computing"
         assert result[0].level == 1
 
-    @patch("bmrk.detector.fitz")
-    def test_toc_neighbor_page_skipped_when_likely_continuation(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_toc_neighbor_page_skipped_when_likely_continuation(self, mock_pymupdf):
         # Page 1 has explicit TOC heading; page 2 is noisy continuation with
         # low but non-trivial TOC-likeness and should be skipped as well.
         p0 = [
@@ -1471,7 +1471,7 @@ class TestDetectHeadings:
             _make_span("x" * 200, 12.0, top=220),
         ]
         mock_doc = _make_mock_doc([p0, p1, p2])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1481,15 +1481,15 @@ class TestDetectHeadings:
         assert "Example item A .......... 10" not in titles
         assert "Chapter 2 Topic" in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_chapter_label_merged_when_title_is_one_level_deeper(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_chapter_label_merged_when_title_is_one_level_deeper(self, mock_pymupdf):
         # Repro for chapter-openers: "Chapter 2" and "Title"
         # may be inferred as L1 and L2 but should still merge into one entry.
         body = _make_span("x" * 200, 12.0, top=600)
         label = _make_span("Chapter 2", 24.0, top=100)
         title = _make_span("Title", 20.0, top=260)
         mock_doc = _make_mock_doc([[label, title, body]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1497,8 +1497,8 @@ class TestDetectHeadings:
         assert result[0].title == "Chapter 2 Title"
         assert result[0].level == 1
 
-    @patch("bmrk.detector.fitz")
-    def test_chapter_label_not_demoted_by_previous_page_footer(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_chapter_label_not_demoted_by_previous_page_footer(self, mock_pymupdf):
         # Numeric footers from the previous page must not contribute math
         # context to the first heading block on the next page.
         footer = _make_span("40", 11.0, top=740, left=243.0)
@@ -1507,15 +1507,15 @@ class TestDetectHeadings:
         title = _make_span("Sample Topic", 30.0, top=200, left=142.0)
         body2 = _make_span("x" * 200, 12.0, top=420)
         mock_doc = _make_mock_doc([[body, footer], [chapter, title, body2]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         assert any(entry.title == "Chapter 4 Sample Topic" for entry in result)
         assert not any(entry.title == "Sample Topic" for entry in result)
 
-    @patch("bmrk.detector.fitz")
-    def test_superscript_footnote_ref_stripped_from_heading(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_superscript_footnote_ref_stripped_from_heading(self, mock_pymupdf):
         # A heading with a superscript footnote ref on the same line must
         # produce a clean title without the footnote number.
         body_span = _make_span("x" * 200, 12.0, top=100)
@@ -1543,7 +1543,7 @@ class TestDetectHeadings:
         page.rect.height = 792.0
         mock_doc.__len__ = MagicMock(return_value=1)
         mock_doc.__iter__ = MagicMock(side_effect=lambda: iter([page]))
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1551,14 +1551,14 @@ class TestDetectHeadings:
         assert "Distributed Systems" in titles
         assert not any("11" in t for t in titles)
 
-    @patch("bmrk.detector.fitz")
-    def test_math_symbol_not_detected_as_heading(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_math_symbol_not_detected_as_heading(self, mock_pymupdf):
         # A summation sign at large font size should not become a heading
         body = _make_span("body text here and more", 12.0, top=100)
         math_sym = _make_span("\u2211", 24.0, top=200)
         real_heading = _make_span("Introduction", 18.0, top=300)
         mock_doc = _make_mock_doc([[body, math_sym, real_heading]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
@@ -1566,26 +1566,26 @@ class TestDetectHeadings:
         assert "\u2211" not in titles
         assert "Introduction" in titles
 
-    @patch("bmrk.detector.fitz")
-    def test_math_expression_not_detected_as_heading(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_math_expression_not_detected_as_heading(self, mock_pymupdf):
         # Short math expression with operators should be filtered
         body = _make_span("body text here and more", 12.0, top=100)
         math_expr = _make_span("f(x) = \u2211", 18.0, top=200)
         mock_doc = _make_mock_doc([[body, math_expr]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 
         assert result == []
 
-    @patch("bmrk.detector.fitz")
-    def test_heading_with_greek_letter_not_filtered(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_heading_with_greek_letter_not_filtered(self, mock_pymupdf):
         # A real heading that happens to contain a Greek letter should NOT
         # be filtered -- it exceeds _MATH_SPAN_MAX_LEN.
         body = _make_span("x" * 200, 12.0, top=100)
         heading = _make_span("The \u03b1-Particle Experiment", 18.0, top=200)
         mock_doc = _make_mock_doc([[body, heading]])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         result = detect_headings("dummy.pdf", size_threshold_ratio=1.05)
 

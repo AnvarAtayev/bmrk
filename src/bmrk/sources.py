@@ -1,6 +1,6 @@
 import logging
 
-import fitz
+import pymupdf
 
 from bmrk.detector import HeadingEntry
 
@@ -31,7 +31,7 @@ def read_existing_outline(pdf_path: str) -> list[HeadingEntry]:
         outline or none of its entries are usable.
     """
     try:
-        with fitz.open(pdf_path) as doc:
+        with pymupdf.open(pdf_path) as doc:
             toc = doc.get_toc()
             page_count = len(doc)
     except (RuntimeError, ValueError) as exc:

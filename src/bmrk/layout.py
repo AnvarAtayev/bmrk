@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+import pymupdf
+
 log = logging.getLogger("bmrk")
 
 
@@ -77,12 +79,6 @@ _CAPTION_RE = re.compile(r"^(?:table|figure|fig\.)\s+\d+(?:\.\d+)?\b", re.IGNORE
 _PROMPT_RE = re.compile(r"^(?:[A-Z]\.|Q\.|\d+\.)\s+")
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z'’\-]*")
 _PAGE_NUMBER_RE = re.compile(r"\b\d{1,4}\b")
-
-
-def _fitz_module():
-    from bmrk import detector as detector_module
-
-    return detector_module.fitz
 
 
 def _detector_helpers():
@@ -156,11 +152,10 @@ def _read_pdf_artifacts(
     pdf_path: str,
     on_page=None,
 ) -> tuple[list[RawLine], dict[int, list[tuple[float, float, float, float]]]]:
-    fitz = _fitz_module()
     lines: list[RawLine] = []
     table_boxes: dict[int, list[tuple[float, float, float, float]]] = {}
 
-    with fitz.open(pdf_path) as doc:
+    with pymupdf.open(pdf_path) as doc:
         total = len(doc)
         for page_idx, page in enumerate(doc):
             if on_page is not None:
@@ -185,7 +180,7 @@ def _read_pdf_artifacts(
             if page_table_boxes:
                 table_boxes[page_idx] = page_table_boxes
 
-            blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]
+            blocks = page.get_text("dict", flags=pymupdf.TEXT_PRESERVE_WHITESPACE)["blocks"]
             for block_id, block in enumerate(blocks):
                 if block.get("type") != 0:
                     continue

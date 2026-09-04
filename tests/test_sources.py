@@ -1,6 +1,6 @@
 """End-to-end tests for heading sources, using real generated PDFs."""
 
-import fitz
+import pymupdf
 import pytest
 from typer.testing import CliRunner
 
@@ -26,7 +26,7 @@ _OUTLINE = [
 
 def _write_pages(count, heading_pages=(), heading_top=140):
     """Build a *count*-page document, optionally with large headings on some pages."""
-    doc = fitz.open()
+    doc = pymupdf.open()
     for index in range(count):
         page = doc.new_page()
         y = heading_top
@@ -64,7 +64,7 @@ def pdf_without_outline(tmp_path):
 
 
 def _outline_of(path):
-    doc = fitz.open(path)
+    doc = pymupdf.open(path)
     toc = [(level, title, page) for level, title, page in doc.get_toc()]
     doc.close()
     return toc

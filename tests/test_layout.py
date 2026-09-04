@@ -103,15 +103,15 @@ def _make_raw_line(
 
 
 class TestLayoutAnalysis:
-    @patch("bmrk.detector.fitz")
-    def test_extract_raw_lines_preserves_geometry_and_style(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_extract_raw_lines_preserves_geometry_and_style(self, mock_pymupdf):
         line = _make_line(
             _make_span("Example Heading", 18.0, flags=_FLAGS_BOLD_ITALIC, top=120.0, left=36.0),
             left=36.0,
             right=260.0,
         )
         mock_doc = _make_mock_doc([[line]], page_width=600.0)
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         lines = extract_raw_lines("dummy.pdf")
 
@@ -127,8 +127,8 @@ class TestLayoutAnalysis:
         assert raw.block_id == 0
         assert raw.line_id == 0
 
-    @patch("bmrk.detector.fitz")
-    def test_multiline_prose_becomes_body_paragraph(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_multiline_prose_becomes_body_paragraph(self, mock_pymupdf):
         page = [
             _make_span(
                 "This sample paragraph continues across multiple visual lines without ending",
@@ -145,7 +145,7 @@ class TestLayoutAnalysis:
             _make_span("Example Section", 18.0, top=260.0, left=48.0),
         ]
         mock_doc = _make_mock_doc([page])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         layout = analyze_layout("dummy.pdf")
 
@@ -154,15 +154,15 @@ class TestLayoutAnalysis:
         assert "multiple visual lines" in body_blocks[0].text
         assert body_blocks[0].features["line_count"] == 2
 
-    @patch("bmrk.detector.fitz")
-    def test_wrapped_heading_becomes_heading_candidate(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_wrapped_heading_becomes_heading_candidate(self, mock_pymupdf):
         page = [
             _make_span("SAMPLE", 24.0, top=100.0, left=80.0),
             _make_span("TOPIC", 24.0, top=132.0, left=80.0),
             _make_span("x" * 200, 12.0, top=240.0, left=48.0),
         ]
         mock_doc = _make_mock_doc([page])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         layout = analyze_layout("dummy.pdf")
 
@@ -170,8 +170,8 @@ class TestLayoutAnalysis:
         assert len(headings) == 1
         assert headings[0].text == "SAMPLE TOPIC"
 
-    @patch("bmrk.detector.fitz")
-    def test_centered_formula_becomes_display_math(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_centered_formula_becomes_display_math(self, mock_pymupdf):
         formula = _make_line(
             _make_span("f(x) = x^2 + y^2", 14.0, top=220.0, left=220.0),
             left=210.0,
@@ -183,15 +183,15 @@ class TestLayoutAnalysis:
             _make_span("x" * 200, 12.0, top=320.0, left=48.0),
         ]
         mock_doc = _make_mock_doc([page])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         layout = analyze_layout("dummy.pdf")
 
         formula_block = next(block for block in layout.blocks if "f(x) =" in block.text)
         assert formula_block.label == BlockLabel.DISPLAY_MATH
 
-    @patch("bmrk.detector.fitz")
-    def test_table_rows_become_table_region(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_table_rows_become_table_region(self, mock_pymupdf):
         table_header = _make_line(
             _make_span("Name ", 14.0, top=200.0, left=40.0),
             _make_span("1 ", 14.0, top=200.0, left=180.0),
@@ -212,7 +212,7 @@ class TestLayoutAnalysis:
             _make_span("Another Section", 18.0, top=340.0, left=48.0),
         ]
         mock_doc = _make_mock_doc([page])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         layout = analyze_layout("dummy.pdf")
 
@@ -220,23 +220,23 @@ class TestLayoutAnalysis:
         assert table_blocks
         assert any("Name 1 2 3" in block.text for block in table_blocks)
 
-    @patch("bmrk.detector.fitz")
-    def test_table_caption_becomes_caption(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_table_caption_becomes_caption(self, mock_pymupdf):
         page = [
             _make_span("Table 2.1 Example values", 10.0, top=180.0, left=48.0),
             _make_span("Example Section", 18.0, top=260.0, left=48.0),
             _make_span("x" * 200, 12.0, top=320.0, left=48.0),
         ]
         mock_doc = _make_mock_doc([page])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         layout = analyze_layout("dummy.pdf")
 
         caption = next(block for block in layout.blocks if block.text.startswith("Table 2.1"))
         assert caption.label == BlockLabel.CAPTION
 
-    @patch("bmrk.detector.fitz")
-    def test_prompt_followed_by_solution_becomes_problem_prompt(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_prompt_followed_by_solution_becomes_problem_prompt(self, mock_pymupdf):
         page = [
             _make_span("A. What is the sample output?", 12.0, top=180.0, left=48.0),
             _make_span(
@@ -248,15 +248,15 @@ class TestLayoutAnalysis:
             _make_span("x" * 200, 12.0, top=260.0, left=48.0),
         ]
         mock_doc = _make_mock_doc([page])
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         layout = analyze_layout("dummy.pdf")
 
         prompt = next(block for block in layout.blocks if block.text.startswith("A."))
         assert prompt.label == BlockLabel.PROBLEM_PROMPT
 
-    @patch("bmrk.detector.fitz")
-    def test_repeated_top_text_becomes_running_header_footer(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_repeated_top_text_becomes_running_header_footer(self, mock_pymupdf):
         pages = []
         for page_number in range(3):
             pages.append(
@@ -267,7 +267,7 @@ class TestLayoutAnalysis:
                 ]
             )
         mock_doc = _make_mock_doc(pages)
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         layout = analyze_layout("dummy.pdf")
 
@@ -277,8 +277,8 @@ class TestLayoutAnalysis:
         assert len(header_blocks) == 3
         assert all(block.label == BlockLabel.RUNNING_HEADER_FOOTER for block in header_blocks)
 
-    @patch("bmrk.detector.fitz")
-    def test_toc_page_becomes_toc_entry(self, mock_fitz):
+    @patch("bmrk.layout.pymupdf")
+    def test_toc_page_becomes_toc_entry(self, mock_pymupdf):
         pages = [
             [
                 _make_span("Table of Contents", 18.0, top=100.0, left=48.0),
@@ -292,7 +292,7 @@ class TestLayoutAnalysis:
             ],
         ]
         mock_doc = _make_mock_doc(pages)
-        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        mock_pymupdf.open.return_value.__enter__.return_value = mock_doc
 
         layout = analyze_layout("dummy.pdf")
 
